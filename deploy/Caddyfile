@@ -1,0 +1,3 @@
+koreader.d.zm.is {
+	import demo_or_auth unix//code/run/koreader.sock
+}

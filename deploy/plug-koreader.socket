@@ -1,0 +1,26 @@
+[Unit]
+Description=Koreader (xf mesh plug) (activation socket)
+# Deliberately NO PartOf=. PartOf propagates stop/restart from the service to the
+# socket, and combined with RemoveOnStop below that DELETES the socket file whenever the
+# service stops — leaving nothing to accept a connection and re-activate it. A clean
+# `systemctl stop`, or any plain SIGTERM, then bricks the plug until someone with
+# privileges restarts the socket unit by hand.
+#
+# The service already declares Requires=/After= on this socket, so starting the service
+# pulls the socket up. The socket must OUTLIVE the service, not track it.
+#
+# Obsidian "Making a new plug" §10b says the opposite and is stale; several older units
+# in the fleet carry PartOf= because they were written by following it.
+
+[Socket]
+ListenStream=/code/run/koreader.sock
+SocketMode=0660
+SocketUser=code
+# caddy, not code: the edge proxies to this socket, and without the group it cannot
+# open it. The symptom is an empty 200, which appears in no log.
+SocketGroup=caddy
+RemoveOnStop=yes
+Service=plug-koreader.service
+
+[Install]
+WantedBy=sockets.target

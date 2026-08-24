@@ -1,0 +1,4 @@
+bin/
+*.sock
+.tmp/
+/plug-koreader
