@@ -11,7 +11,16 @@ import (
 // testApp and testBase are the seam the generated conformance test also uses. Keep
 // their names: verify_contract_test.go is regenerated from the scaffold and calls them.
 func testApp() *app {
-	a := &app{items: dblib.NewFakeDocStore[Book](), webGroup: "plug_koreader", publicURL: "https://koreader.zm.is"}
+	a := &app{
+		items: dblib.NewFakeDocStore[Book](), webGroup: "plug_koreader", publicURL: "https://koreader.zm.is",
+		// The reading rail. Part of the ONE fixture rather than a second constructor
+		// beside it: two test apps drift, and the one that drifts is always the one
+		// the failing test used.
+		devices:   dblib.NewFakeDocStore[Device](),
+		pairCodes: dblib.NewFakeDocStore[PairCode](),
+		events:    dblib.NewFakeDocStore[ReadEvent](),
+		tokens:    dblib.NewFakeDocStore[TokenRef](),
+	}
 	a.item = a.itemEntity()
 	return a
 }

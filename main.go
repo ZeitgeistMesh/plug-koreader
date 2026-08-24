@@ -26,6 +26,13 @@ type app struct {
 	rt        *plugrun.Runtime
 	publicURL string
 	webGroup  string
+
+	// The reading rail: paired devices, the codes that create them, and the RAW
+	// events a device sends. Raw on purpose — see ingest.go.
+	devices   dblib.DocStore[Device]
+	pairCodes dblib.DocStore[PairCode]
+	events    dblib.DocStore[ReadEvent]
+	tokens    dblib.DocStore[TokenRef]
 }
 
 func main() {
@@ -56,7 +63,25 @@ func main() {
 		log.Fatalf("plug-koreader: store: %v", err)
 	}
 
+	devices, err := dblib.NewPostgresDocStore[Device](ctx, pg, collDevices)
+	if err != nil {
+		log.Fatalf("plug-koreader: device store: %v", err)
+	}
+	pairCodes, err := dblib.NewPostgresDocStore[PairCode](ctx, pg, collPairCodes)
+	if err != nil {
+		log.Fatalf("plug-koreader: pair-code store: %v", err)
+	}
+	events, err := dblib.NewPostgresDocStore[ReadEvent](ctx, pg, collEvents)
+	if err != nil {
+		log.Fatalf("plug-koreader: event store: %v", err)
+	}
+	tokens, err := dblib.NewPostgresDocStore[TokenRef](ctx, pg, collTokens)
+	if err != nil {
+		log.Fatalf("plug-koreader: token store: %v", err)
+	}
+
 	a := &app{items: items, webGroup: base.WebGroup,
+		devices: devices, pairCodes: pairCodes, events: events, tokens: tokens,
 		publicURL: plugcfg.Env("PLUG_KOREADER_PUBLIC_URL", plugcfg.SvcURL("koreader"))}
 	a.item = a.itemEntity()
 
@@ -75,6 +100,21 @@ func main() {
 		Web: func(rt *plugrun.Runtime) http.Handler {
 			mux := http.NewServeMux()
 			mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
+
+			// THE DEVICE ENDPOINTS COME FIRST and are deliberately outside the web
+			// gate: a reader holds a bearer token, not an SSO session, and the edge
+			// routes a Bearer request straight to this socket with identity headers
+			// stripped. Both handlers authenticate on the token alone and read no
+			// Remote-* header, so a forged one is inert.
+			mux.HandleFunc("/api/pair", a.serveAPIPair)
+			mux.HandleFunc("/api/ingest", a.serveIngest)
+
+			// The human half, behind the ordinary gate.
+			mux.HandleFunc("/pair", a.servePair)
+			mux.HandleFunc("/addon", a.serveAddon)
+			mux.HandleFunc("/addon/"+addonDirName+".zip", a.serveAddonZip)
+			mux.HandleFunc("/addon/file/", a.serveAddonFile)
+
 			// The generated CRUD surface: the list, the separate /book/new create
 			// page, add, delete, the step wizard and the window-manager entity. There
 			// is no HTML in this repository, which is why there is nothing here to
@@ -103,7 +143,9 @@ func main() {
 // pointing at "/" would be a second route to the same page.
 func nav(active string) []flowweb.NavLink {
 	links := []flowweb.NavLink{
-		{Label: "Book" + "s", URL: "/", Icon: koreaderApp.Icon},
+		{Label: "Books", URL: "/", Icon: koreaderApp.Icon},
+		{Label: "Devices", URL: "/pair", Icon: "fa-solid fa-tablet-screen-button"},
+		{Label: "Plugin", URL: "/addon", Icon: "fa-solid fa-puzzle-piece"},
 	}
 	for i := range links {
 		links[i].Active = links[i].URL == active
