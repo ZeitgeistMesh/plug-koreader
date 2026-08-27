@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	scopeUser        = "koreader:user"
-	collBooks   = "koreader_books"
+	scopeUser = "koreader:user"
+	collBooks = "koreader_books"
 )
 
 // Book is this plug's owned record. Add the fields the product needs; every

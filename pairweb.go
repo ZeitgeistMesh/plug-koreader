@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"html/template"
 	"net/http"
 	"sort"
 	"strings"
@@ -52,10 +53,19 @@ func (a *app) servePair(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, webui.PageHeader("Devices", "Readers that send their reading here"))
 
 	if minted != "" {
-		fmt.Fprint(w, `<div class="card"><h3 style="margin-top:0">Type this on your reader</h3>`)
+		fmt.Fprint(w, `<div class="card"><h3>Type this on your reader</h3>`)
 		// SPACED IN THE MIDDLE and in a monospace face. It is read off one screen and
-		// typed on another, at low contrast, by somebody holding both.
-		fmt.Fprintf(w, `<p style="font-family:var(--font-mono,ui-monospace,monospace);font-size:2.2rem;letter-spacing:.35rem;margin:.4rem 0">%s</p>`,
+		// typed on another, at low contrast, by somebody holding both — so the size and
+		// the tracking are the point, not decoration.
+		//
+		// THE LAST INLINE STYLE IN THIS PLUG, and it is still one: an inline style
+		// outranks every stylesheet, so nothing can theme this. The honest fix is a
+		// shared component — plug-whatsapp renders the SAME shape for its phone-linking
+		// code, also inline-styled, and two plugs is when a shape belongs in webui — but
+		// that is a BaseCSS change, and BaseCSS reaches browsers through mod-shell, so it
+		// is a fleet release rather than a plug edit. Until then: the spacing at least
+		// comes off the shared scale, so only the typography is local.
+		fmt.Fprintf(w, `<p style="font-family:var(--font-mono,ui-monospace,monospace);font-size:2.2rem;letter-spacing:.35rem;margin:var(--sp-1,.25rem) 0">%s</p>`,
 			html.EscapeString(minted[:3]+" "+minted[3:]))
 		fmt.Fprint(w, `<p class="muted">Valid for fifteen minutes, and it can be used once. On the reader: <strong>☰ → Tools → Zeitgeist reading sync → Pair this device…</strong></p>`)
 		fmt.Fprintf(w, `<p class="muted">No plugin yet? <a href="/addon">Install it first</a>.</p></div>`)
@@ -64,29 +74,48 @@ func (a *app) servePair(w http.ResponseWriter, r *http.Request) {
 	devices, _ := a.devices.List(r.Context(), tk)
 	sort.Slice(devices, func(i, j int) bool { return devices[i].CreatedAt > devices[j].CreatedAt })
 
-	fmt.Fprint(w, `<div class="card"><h3 style="margin-top:0">Paired readers</h3>`)
+	fmt.Fprint(w, `<div class="card"><h3>Paired readers</h3>`)
 	if len(devices) == 0 {
 		fmt.Fprint(w, `<p class="muted">None yet. Mint a code below, then type it into the plugin on your reader.</p>`)
 	} else {
-		fmt.Fprint(w, `<table><thead><tr><th>Reader</th><th>Token</th><th>Last sync</th><th>KOReader</th><th>Statistics</th><th></th></tr></thead><tbody>`)
+		// webui.SimpleTable, NOT hand-written table markup. This is the row the overflow
+		// report pointed at: six columns, one of them a statistics schema like
+		// `page_stat_data(id_book,page,start_time,duration,total_pages)`, inside a
+		// card. A bare table element gets an overflow container ONLY inside BaseCSS's
+		// @media(max-width:640px) — above that it takes its natural width and grows
+		// straight out of the card, which is what the screenshot showed at 1916px.
+		// SimpleTable renders .lv-tablewrap > .lv-table.tbl-stack, so the wrap scrolls
+		// and listViewJS collapses the row to label:value cards at ANY width once it
+		// would overflow. Both assets arrive via ListViewHead() in a.page.
+		rows := make([]webui.TableRow, 0, len(devices))
 		for _, d := range devices {
-			state := ""
+			name := webui.Text(d.Name)
 			if d.Revoked {
-				state = " " + string(webui.Pill("revoked", "muted"))
+				name += " " + webui.Pill("revoked", "muted")
 			}
-			fmt.Fprintf(w, `<tr><td>%s%s</td><td class="mono">…%s</td><td>%s</td><td>%s</td><td class="mono">%s</td><td>%s</td></tr>`,
-				html.EscapeString(d.Name), state,
-				html.EscapeString(d.TokenTail),
-				html.EscapeString(orDash(d.LastSyncAt)),
-				html.EscapeString(orDash(d.KOReaderVersion)),
-				html.EscapeString(orDash(d.StatsSchema)),
-				revokeForm(d))
+			rows = append(rows, webui.TableRow{Cells: []template.HTML{
+				name,
+				codeCell(tokenTail(d.TokenTail)),
+				webui.Text(orDash(d.LastSyncAt)),
+				webui.Text(orDash(d.KOReaderVersion)),
+				codeCell(d.StatsSchema),
+				template.HTML(revokeForm(d)),
+			}})
 		}
-		fmt.Fprint(w, `</tbody></table>`)
-		fmt.Fprint(w, `<p class="muted" style="margin-top:.6rem">The token is shown only by its last four characters — the rest is stored as a hash and cannot be read back, here or anywhere else.</p>`)
+		// The last header is deliberately EMPTY: the actions column names nothing, and
+		// an empty data-label is also what tells the stacked card not to print a label
+		// in front of the revoke button.
+		fmt.Fprint(w, webui.SimpleTable(
+			[]string{"Reader", "Token", "Last sync", "KOReader", "Statistics", ""}, rows))
+		fmt.Fprint(w, `<p class="muted">The token is shown only by its last four characters — the rest is stored as a hash and cannot be read back, here or anywhere else.</p>`)
 	}
-	fmt.Fprintf(w, `<form method="post" style="margin-top:.8rem">%s</form>`,
-		webui.IconTextButton("fa-solid fa-key", "Mint a pairing code", webui.BtnOpts{Kind: "primary", Type: "submit"}))
+	// One button, so no row container and no margin of its own: the paragraph above it
+	// already carries the house paragraph margin. The hand-tuned top margin that used to
+	// sit on this form was a literal off the shared scale, which is the drift the style
+	// guide's §3 exists to stop — and dynlint's off_scale_spacing counts.
+	fmt.Fprintf(w, `<form method="post">%s</form>`,
+		webui.IconTextButton("fa-solid fa-key", "Mint a pairing code",
+			webui.BtnOpts{Kind: "primary", Type: "submit"}))
 	fmt.Fprint(w, `</div>`)
 	p.End(w)
 }
@@ -131,6 +160,32 @@ func orDash(s string) string {
 		return "—"
 	}
 	return s
+}
+
+// codeCell renders a machine value — a token tail, a statistics schema — as a <code>
+// chip, and an em dash when there is nothing to show.
+//
+// It replaces a `class="mono"` on the <td>, which styled NOTHING: the only .mono rule
+// in the fleet is `.card-meta .cm-val.mono`, so outside a card-meta list the class
+// matched no selector and the values rendered in the body font. <code> is a ROLE the
+// shared theme already dresses (STYLEGUIDE §2) — and it carries overflow-wrap:anywhere,
+// which is what lets a long unbroken schema string wrap instead of setting the width of
+// the whole table.
+// tokenTail is the displayed form of a stored token tail — the leading ellipsis is
+// what says "the rest of this exists and is not shown". An absent tail stays absent
+// rather than becoming a lone ellipsis with nothing behind it.
+func tokenTail(tail string) string {
+	if strings.TrimSpace(tail) == "" {
+		return ""
+	}
+	return "…" + tail
+}
+
+func codeCell(s string) template.HTML {
+	if strings.TrimSpace(s) == "" {
+		return webui.Text("—")
+	}
+	return "<code>" + webui.Text(s) + "</code>"
 }
 
 // --- the device endpoint ----------------------------------------------------

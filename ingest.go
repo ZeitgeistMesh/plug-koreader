@@ -76,17 +76,17 @@ type ingestRequest struct {
 	// What the device is, told to us on every sync rather than at pairing: an
 	// e-reader gets upgraded, and the whole reason the first slice exists is to find
 	// out which statistics schema a real device writes.
-	KOReaderVersion string `json:"koreader_version"`
-	StatsSchema     string `json:"stats_schema"`
-	DeviceModel     string `json:"device_model"`
+	KOReaderVersion string      `json:"koreader_version"`
+	StatsSchema     string      `json:"stats_schema"`
+	DeviceModel     string      `json:"device_model"`
 	Events          []ReadEvent `json:"events"`
 }
 
 type ingestReply struct {
-	OK        bool   `json:"ok"`
-	Accepted  int    `json:"accepted"`
-	Duplicate int    `json:"duplicate"`
-	Rejected  int    `json:"rejected"`
+	OK        bool `json:"ok"`
+	Accepted  int  `json:"accepted"`
+	Duplicate int  `json:"duplicate"`
+	Rejected  int  `json:"rejected"`
 	// HighWater is the largest StartTime this server has now stored for this device.
 	// The device advances its cursor to what the SERVER acknowledged, never to what it
 	// read — an acknowledgement that never arrived must cost a resend, not a gap.
