@@ -550,6 +550,113 @@ function ZmSync:libraryRoot()
     return "/mnt/onboard"
 end
 
+-- ── page capture ─────────────────────────────────────────────────────────────
+--
+-- The web can ask for the full page a highlight came from. It cannot fetch it: the server
+-- has never seen the book and the reader is behind NAT and asleep. So a click becomes a
+-- REQUEST, handed back in the sync reply, and this is the half that answers it.
+
+-- bookPaths maps partial_md5_checksum -> the book's file, read out of the sidecars.
+--
+-- The server knows a book only by its md5; only the device knows where the file is. The
+-- sidecar carries both, which is the same join the annotations already rely on.
+function ZmSync:bookPaths()
+    local paths = {}
+    eachSidecar(self:libraryRoot(), function(t)
+        local md5 = t.partial_md5_checksum
+        if type(md5) == "string" and md5 ~= "" and type(t.doc_path) == "string" then
+            paths[md5] = t.doc_path
+        end
+    end)
+    return paths
+end
+
+-- pageText extracts one page of one book as plain text.
+--
+-- getPageText returns the backend's own structure — for mupdf and djvu a list of LINES,
+-- each a list of word boxes — so it is flattened here rather than assumed to be a string.
+-- An epub is reflowable and its page numbers depend on the font settings in force, which
+-- is exactly why the DEVICE does this and not the server: only the reader knows what page
+-- 312 currently means.
+--
+-- Every failure returns a REASON. A blank page and an unopenable book look identical from
+-- the web, and the whole point of the button is to be able to tell them apart.
+function ZmSync:pageText(path, pageno)
+    if type(path) ~= "string" or path == "" then
+        return nil, "this book is not on the reader any more"
+    end
+    local lfs = require("libs/libkoreader-lfs")
+    if not lfs.attributes(path, "mode") then
+        return nil, "the file has moved or been deleted: " .. path
+    end
+    local ok, DocumentRegistry = pcall(require, "document/documentregistry")
+    if not ok then
+        return nil, "no document registry on this reader"
+    end
+    local opened, doc = pcall(function() return DocumentRegistry:openDocument(path) end)
+    if not opened or not doc then
+        return nil, "could not open the book: " .. tostring(doc)
+    end
+
+    local got, res = pcall(function() return doc:getPageText(pageno) end)
+    pcall(function() doc:close() end)
+    if not got then
+        return nil, "could not read the page: " .. tostring(res)
+    end
+    if type(res) == "string" then
+        return res, nil
+    end
+    if type(res) ~= "table" then
+        return nil, "this book format does not expose page text"
+    end
+
+    local lines = {}
+    for _, line in ipairs(res) do
+        if type(line) == "string" then
+            lines[#lines + 1] = line
+        elseif type(line) == "table" then
+            local words = {}
+            for _, wbox in ipairs(line) do
+                if type(wbox) == "table" and type(wbox.word) == "string" then
+                    words[#words + 1] = wbox.word
+                elseif type(wbox) == "string" then
+                    words[#words + 1] = wbox
+                end
+            end
+            if #words > 0 then lines[#lines + 1] = table.concat(words, " ") end
+        end
+    end
+    if #lines == 0 then
+        return nil, "the page has no extractable text (a scanned image, perhaps)"
+    end
+    return table.concat(lines, "\n"), nil
+end
+
+-- fulfilPageRequests answers what the sync reply asked for.
+--
+-- Best effort and never fatal: a page that cannot be produced is REPORTED as failed with
+-- its reason, so the request stops being re-asked and the web can say what went wrong. A
+-- silent skip would leave the button pending for ever.
+function ZmSync:fulfilPageRequests(requests)
+    if type(requests) ~= "table" or #requests == 0 then return 0 end
+    local paths = self:bookPaths()
+    local done = 0
+    for _, req in ipairs(requests) do
+        local md5 = req.book_md5
+        local pageno = tonumber(req.page)
+        if type(md5) == "string" and md5 ~= "" and pageno and pageno > 0 then
+            local text, err = self:pageText(paths[md5], pageno)
+            local ok = self:post("/api/page", {
+                book_md5 = md5, page = pageno,
+                text = text or "", error = err or "",
+            }, self:token())
+            if ok then done = done + 1 end
+            if err then logger.warn("zmsync: page", pageno, "of", md5, "failed:", err) end
+        end
+    end
+    return done
+end
+
 -- ── syncing ──────────────────────────────────────────────────────────────────
 
 function ZmSync:onZmSyncNow()
@@ -644,6 +751,10 @@ function ZmSync:syncNow(interactive, continuing)
     if interactive then
         UIManager:show(InfoMessage:new{ text = summary })
     end
+
+    -- Answer any pages the web asked for. AFTER the cursor is saved, so a slow or failing
+    -- capture can never cost the reading sync that already succeeded.
+    pcall(function() self:fulfilPageRequests(res.page_requests) end)
     -- More to send? Keep going. A first sync of a long history is many batches and
     -- should not need the reader to press the button once per five hundred pages.
     -- KEEP PAGING ON THE READING COUNT, not on #events — the annotations appended above

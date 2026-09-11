@@ -91,6 +91,11 @@ a.ko-day:hover{outline:2px solid var(--accent);outline-offset:1px}
 .ko-pager-prev{grid-column:1;justify-self:start}
 .ko-pager-count{grid-column:2;color:var(--muted);font-size:.85rem;white-space:nowrap}
 .ko-pager-next{grid-column:3;justify-self:end}
+.ko-page{margin:var(--sp-3) 0 0;border:1px solid var(--border);border-radius:var(--radius);
+  padding:var(--sp-2) var(--sp-3);background:var(--card)}
+.ko-page summary{cursor:pointer;color:var(--muted);font-size:.85rem}
+.ko-page-text{margin-top:var(--sp-2);white-space:pre-wrap;line-height:1.55;max-width:66ch}
+.ko-page-wait{margin:var(--sp-2) 0 0;font-size:.85rem}
 a.ko-quote-cell{text-decoration:none}
 a.ko-quote-cell:hover{text-decoration:underline}
 </style>`

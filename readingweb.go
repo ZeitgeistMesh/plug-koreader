@@ -302,6 +302,7 @@ func (a *app) serveDay(w http.ResponseWriter, r *http.Request) {
 	} else {
 		for _, an := range marked {
 			fmt.Fprint(w, annotationBlock(an, loc, true))
+			fmt.Fprint(w, pageContextBlock(a.pageCaptureFor(r.Context(), tk, an.BookMD5, an.Page), an))
 		}
 	}
 	fmt.Fprint(w, `</div>`)
@@ -314,6 +315,44 @@ func dayNavLine(date string) string {
 		return ""
 	}
 	return fmt.Sprintf("%s · %s", d.AddDate(0, 0, -1).Format("2006-01-02"), d.AddDate(0, 0, 1).Format("2006-01-02"))
+}
+
+// pageContextBlock renders the captured page under an annotation, or the button that asks
+// for it, or why it could not be had.
+//
+// FOUR STATES, and every one says something. The state that matters most is "failed": a
+// page the reader cannot produce has to explain itself, because a button that silently
+// does nothing is indistinguishable from a button that is broken — and this plug has spent
+// a day proving how expensive that confusion is.
+func pageContextBlock(cap *PageCapture, an ReadEvent) template.HTML {
+	if an.Page <= 0 || strings.TrimSpace(an.BookMD5) == "" {
+		return ""
+	}
+	var b strings.Builder
+	switch {
+	case cap != nil && cap.Status == pageStatusDone:
+		fmt.Fprintf(&b, `<details class="ko-page" open><summary>Page %d</summary><div class="ko-page-text">%s</div></details>`,
+			an.Page, webui.Text(cap.Text))
+		return template.HTML(b.String())
+	case cap != nil && cap.Status == pageStatusPending:
+		fmt.Fprintf(&b, `<p class="muted ko-page-wait">Page %d requested — it will arrive the next time your reader syncs.</p>`, an.Page)
+		return template.HTML(b.String())
+	case cap != nil && cap.Status == pageStatusFailed:
+		fmt.Fprintf(&b, `<p class="muted ko-page-wait">Page %d could not be read: %s</p>`,
+			an.Page, webui.Text(cap.Error))
+	}
+	// No capture yet, or a failed one worth retrying.
+	label := fmt.Sprintf("Fetch page %d", an.Page)
+	if cap != nil && cap.Status == pageStatusFailed {
+		label = "Try again"
+	}
+	fmt.Fprintf(&b, `<div class="field-row btn-row"><form method="post" action="/page/request">`+
+		`<input type="hidden" name="book" value="%s"><input type="hidden" name="page" value="%d">`+
+		`<input type="hidden" name="title" value="%s">%s</form></div>`,
+		template.HTMLEscapeString(an.BookMD5), an.Page, template.HTMLEscapeString(an.Title),
+		webui.IconTextButton("fa-solid fa-file-lines", label,
+			webui.BtnOpts{Kind: "secondary", Size: "sm", Type: "submit"}))
+	return template.HTML(b.String())
 }
 
 // annotationBlock renders one quote. The TEXT IS THE POINT, so it gets the room: the book

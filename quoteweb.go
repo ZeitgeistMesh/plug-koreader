@@ -167,6 +167,7 @@ func (a *app) serveQuote(w http.ResponseWriter, r *http.Request) {
 				readingDate(shown.StartTime, loc), webui.Text(when.Format("Monday 2 January 2006, 15:04")))))
 	}
 	fmt.Fprint(w, `</dl>`)
+	fmt.Fprint(w, pageContextBlock(a.pageCaptureFor(r.Context(), tk, shown.BookMD5, shown.Page), shown))
 	fmt.Fprint(w, string(reviewqueue.PagerHTML(queue, quotePagerOpts(book))))
 	fmt.Fprint(w, `</div>`)
 	p.End(w)
