@@ -567,19 +567,24 @@ function ZmSync:collectAnnotations()
                 -- while the budget holds; whatever is left is picked up next sync.
                 if a.kind == "bookmark" and (text == nil or text == "") and a.page and a.page > 0 then
                     local key = bmd5 .. ":" .. tostring(a.page)
-                    if not captured[key] and budget > 0 and os.time() < deadline then
+                    local held = captured[key]
+                    if type(held) == "string" and held ~= "" then
+                        -- Captured on an earlier sync: re-send what we sent then, so the
+                        -- server sees identical content rather than an erasing blank.
+                        text = held
+                    elseif held == nil and budget > 0 and os.time() < deadline then
                         budget = budget - 1
                         attempted = attempted + 1
                         local page, err = self:pageText(paths[bmd5], a.page)
                         if page and page ~= "" then
                             text = page
-                            captured[key] = true
+                            captured[key] = page
                             newlyCaptured = newlyCaptured + 1
                         else
                             -- Recorded as done so a page that CANNOT be read is not
                             -- retried on every sync for ever. It costs a book-open each
                             -- time and the answer will not change on its own.
-                            captured[key] = true
+                            captured[key] = false
                             failed = failed + 1
                             if not firstError then firstError = tostring(err) end
                             logger.warn("zmsync: bookmark page", a.page, "of", bmd5, "->", tostring(err))
@@ -644,9 +649,19 @@ end
 -- a hundred bookmarks becoming a hundred book-opens on every single sync.
 
 
--- captured is the local ledger of "md5:page" keys already sent. Kept on the DEVICE because
--- it is a fact about work this device has done, and re-deriving it from the server would
--- need a round trip to answer a question we already know the answer to.
+-- capturedPages is the local ledger, keyed "md5:page" and holding THE PAGE TEXT ITSELF.
+--
+-- It held a boolean, and that was the bug that cost twelve captured pages. The sidecar
+-- never gains the text — the capture lives only in what we sent — so on the next sweep a
+-- ledger that says "done" meant "do not capture, and send the bookmark blank". The server
+-- then had a stored page and an incoming blank for the same id, and overwrote.
+--
+-- Holding the text makes every sweep re-send exactly what it sent before, which is what
+-- "re-send everything, ids are content-derived" promised all along. A page of text is a
+-- couple of kilobytes and there are dozens, not thousands.
+--
+-- A page that could not be read stores `false`: still a "do not retry" marker, and
+-- distinguishable from text.
 function ZmSync:capturedPages()
     local c = self.settings:readSetting("captured_pages")
     if type(c) ~= "table" then c = {} end

@@ -261,6 +261,11 @@ func (a *app) serveIngest(w http.ResponseWriter, r *http.Request) {
 // which is the one behaviour that actually loses data.
 func (a *app) storeEvents(ctx context.Context, tk dblib.TenantKey, dev Device, events []ReadEvent) ingestReply {
 	out := ingestReply{OK: true}
+	// ONE BATCH CAN CARRY THE SAME ID TWICE. A sidecar holding both annotation schemas
+	// yields a legacy bookmark and its unified twin for the same (book, datetime, page),
+	// which derive the same content id — and if the blank one is processed second it
+	// undoes the one with text. Richest wins, decided before any of them is stored.
+	events = preferTexted(events)
 	for i := range events {
 		ev := events[i]
 		ev.ID = strings.TrimSpace(ev.ID)
@@ -330,15 +335,56 @@ func (a *app) storeEvents(ctx context.Context, tk dblib.TenantKey, dev Device, e
 	return out
 }
 
+// preferTexted collapses duplicate ids within a batch, keeping the entry that carries the
+// most text. Order is otherwise preserved.
+func preferTexted(events []ReadEvent) []ReadEvent {
+	best := make(map[string]int, len(events))
+	out := make([]ReadEvent, 0, len(events))
+	for _, ev := range events {
+		id := strings.TrimSpace(ev.ID)
+		if id == "" {
+			out = append(out, ev) // rejected later, with a reason
+			continue
+		}
+		if at, seen := best[id]; seen {
+			if len(strings.TrimSpace(ev.Text)) > len(strings.TrimSpace(out[at].Text)) {
+				out[at] = ev
+			}
+			continue
+		}
+		best[id] = len(out)
+		out = append(out, ev)
+	}
+	return out
+}
+
 // annotationChanged reports whether the device is sending different CONTENT under an id we
 // already hold. Only the fields a reader can actually change are compared; position and
 // timestamps are part of the id or derived from it.
 func annotationChanged(existing, incoming ReadEvent) bool {
+	// AN EMPTY FIELD NEVER ERASES A FULL ONE. This is not tidiness, it is the rule that
+	// stops a sync destroying work: the device captures a bookmark's page once and
+	// remembers only THAT it did, so every later sweep re-sends the same bookmark with
+	// its original empty text — and "content differs, therefore overwrite" then wiped
+	// twelve captured pages on the very next sync.
+	//
+	// Nothing a reader does removes the text from an annotation; deleting it removes the
+	// annotation. So an incoming blank is always absence of information, never a
+	// deletion, and treating it as one is the strictly safer reading.
+	if textLost(existing.Text, incoming.Text) || textLost(existing.Note, incoming.Note) ||
+		textLost(existing.Chapter, incoming.Chapter) || textLost(existing.Title, incoming.Title) {
+		return false
+	}
 	return scrubText(incoming.Text) != existing.Text ||
 		scrubText(incoming.Note) != existing.Note ||
 		scrubText(incoming.Chapter) != existing.Chapter ||
 		scrubText(incoming.Title) != existing.Title ||
 		incoming.Kind != existing.Kind
+}
+
+// textLost reports an incoming blank where something is already stored.
+func textLost(existing, incoming string) bool {
+	return strings.TrimSpace(existing) != "" && strings.TrimSpace(scrubText(incoming)) == ""
 }
 
 // sanitizeEventText scrubs the free text a device sends, because PostgreSQL cannot hold

@@ -147,3 +147,58 @@ func TestReadingRowsStillShortCircuit(t *testing.T) {
 		t.Errorf("a reading row took the update path: %+v", got)
 	}
 }
+
+// TestAnEmptyResendNeverErasesACapturedPage is the regression test for twelve captured
+// pages that a later sync destroyed.
+//
+// The device captures a bookmark's page once. The sidecar never gains that text, so every
+// later sweep re-sent the same bookmark with its original EMPTY text — and "content
+// differs, therefore overwrite" wiped the stored page. Nothing a reader does removes text
+// from an annotation (deleting it removes the annotation), so an incoming blank is always
+// absence of information, never a deletion.
+func TestAnEmptyResendNeverErasesACapturedPage(t *testing.T) {
+	a := testApp()
+	ctx := context.Background()
+	dev, _, tk := pairedDevice(t, a)
+
+	captured := ReadEvent{ID: "bm", Kind: KindBookmark, BookMD5: "b", Page: 82,
+		StartTime: 1757000000, Text: "the whole of page 82"}
+	if got := a.storeEvents(ctx, tk, dev, []ReadEvent{captured}); got.Accepted != 1 {
+		t.Fatalf("accepted %d, want 1", got.Accepted)
+	}
+
+	// The same bookmark, re-sent blank by a device that only remembered THAT it captured.
+	blank := ReadEvent{ID: "bm", Kind: KindBookmark, BookMD5: "b", Page: 82, StartTime: 1757000000}
+	res := a.storeEvents(ctx, tk, dev, []ReadEvent{blank})
+	if res.Updated != 0 {
+		t.Errorf("a blank resend was treated as a change: %+v", res)
+	}
+	got, err := a.events.Get(ctx, tk, "bm")
+	if err != nil || got == nil {
+		t.Fatal(err)
+	}
+	if got.Text != "the whole of page 82" {
+		t.Errorf("the captured page was erased by an empty resend: %q", got.Text)
+	}
+}
+
+// TestABatchCarryingTheSameIdTwiceKeepsTheText: a sidecar holding BOTH annotation schemas
+// yields a legacy bookmark and its unified twin for the same (book, datetime, page), which
+// derive the same id. If the blank one is processed second it undoes the other.
+func TestABatchCarryingTheSameIdTwiceKeepsTheText(t *testing.T) {
+	a := testApp()
+	ctx := context.Background()
+	dev, _, tk := pairedDevice(t, a)
+
+	res := a.storeEvents(ctx, tk, dev, []ReadEvent{
+		{ID: "dup", Kind: KindBookmark, BookMD5: "b", Page: 5, StartTime: 1757000000, Text: "the page"},
+		{ID: "dup", Kind: KindBookmark, BookMD5: "b", Page: 5, StartTime: 1757000000},
+	})
+	if res.Accepted != 1 {
+		t.Errorf("accepted %d, want 1 — the duplicate should have collapsed", res.Accepted)
+	}
+	got, _ := a.events.Get(ctx, tk, "dup")
+	if got == nil || got.Text != "the page" {
+		t.Errorf("the blank twin won: %+v", got)
+	}
+}
