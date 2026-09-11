@@ -470,9 +470,14 @@ local function eachSidecar(root, fn)
     local seen = 0
     local function walk(dir, depth)
         if depth > 8 then return end
-        local ok, iter = pcall(lfs.dir, dir)
-        if not ok then return end
-        for name in iter do
+        -- BOTH RETURN VALUES. lfs.dir yields an iterator AND the directory object it
+        -- walks, and the iterator is useless without its state: capturing only the first
+        -- gives "directory metatable expected, got nil" on the first step. Caught by
+        -- dry-running this walk on the device before shipping it, which is the only place
+        -- the failure appears — there is no directory to walk in a unit test.
+        local ok, iter, dirobj = pcall(lfs.dir, dir)
+        if not ok or not iter then return end
+        for name in iter, dirobj do
             if name ~= "." and name ~= ".." then
                 local path = dir .. "/" .. name
                 local mode = lfs.attributes(path, "mode")
@@ -552,7 +557,11 @@ function ZmSync:onZmSyncNow()
     return true
 end
 
-function ZmSync:syncNow(interactive)
+-- syncNow sends one batch, and recurses while the reading backfill has more.
+--
+-- `continuing` marks a recursive call. It exists for the annotations: they ride the FIRST
+-- request of a chain and no other.
+function ZmSync:syncNow(interactive, continuing)
     if not self:isPaired() then
         if interactive then
             UIManager:show(InfoMessage:new{ text = _("Pair this device first.") })
@@ -562,13 +571,19 @@ function ZmSync:syncNow(interactive)
     local since = self.settings:readSetting("high_water") or 0
     local events, schema = self:collect(since)
 
-    -- ANNOTATIONS RIDE ALONG, and only on a batch that is not already full. A full batch
-    -- means the reading backfill is still paging, and there will be dozens more requests
-    -- behind this one — attaching the same few hundred highlights to every one of them
-    -- would multiply the whole sweep by forty for no gain. They go with the final, short
-    -- batch, and with every ordinary sync after that.
+    -- ANNOTATIONS RIDE THE FIRST REQUEST OF A CHAIN, and no other.
+    --
+    -- The first version attached them to the first batch that was not FULL, reasoning that
+    -- a full batch means more requests are coming and forty copies of the same few hundred
+    -- highlights is waste. True, and it put them on the LAST request — so they arrived only
+    -- if a forty-request backfill ran to completion. It did not: the chain stopped at 2023
+    -- when the reader slept, and the highlights had never been the thing that was blocked.
+    --
+    -- Riding the first request costs exactly the same one copy per chain and owes nothing
+    -- to how the reading backfill goes. The quotes are what the reader is waiting to see;
+    -- they should not be behind seven years of page rows in the queue.
     local annotations, sidecars = {}, 0
-    if #events < BATCH then
+    if not continuing then
         annotations, sidecars = self:collectAnnotations()
         for _, a in ipairs(annotations) do
             events[#events + 1] = a
@@ -633,7 +648,7 @@ function ZmSync:syncNow(interactive)
     -- KEEP PAGING ON THE READING COUNT, not on #events — the annotations appended above
     -- would otherwise make a short final batch look full and recurse for ever.
     if #events - #annotations >= BATCH then
-        self:syncNow(false)
+        self:syncNow(false, true)
     end
 end
 
