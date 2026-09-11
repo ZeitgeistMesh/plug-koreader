@@ -174,7 +174,9 @@ func main() {
 // pointing at "/" would be a second route to the same page.
 func nav(active string) []flowweb.NavLink {
 	links := []flowweb.NavLink{
-		{Label: "Books", URL: "/", Icon: koreaderApp.Icon},
+		// NO "Books" ENTRY. It was the scaffolded entity's link and it pointed at "/",
+		// which the reading calendar now owns — so the nav offered the same destination
+		// twice under two names, and the Active check (URL == active) lit both.
 		{Label: "Reading", URL: "/", Icon: "fa-solid fa-calendar-days"},
 		{Label: "Quotes", URL: "/quotes", Icon: "fa-solid fa-quote-left"},
 		{Label: "Review", URL: "/review", Icon: "fa-solid fa-repeat"},
