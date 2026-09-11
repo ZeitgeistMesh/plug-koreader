@@ -79,6 +79,31 @@ function ZmSync:addToMainMenu(menu_items)
                 callback = function() self:syncNow(true) end,
             },
             {
+                -- THE ESCAPE HATCH FOR A CURSOR THAT IS AHEAD OF THE DATA.
+                --
+                -- The cursor only moves forward, which is what stops an empty or retried
+                -- batch restarting the history. The cost is that a cursor which got ahead
+                -- of itself — a server bug, a restored backup, a device whose statistics
+                -- database was replaced — can never come back on its own, and the reading
+                -- below it is unreachable for ever.
+                --
+                -- Re-sending is CHEAP AND SAFE because every id is derived from its own
+                -- content: the server recognises what it already holds and counts it as a
+                -- duplicate. So the recovery is simply "ask again from the beginning",
+                -- and it needs to be a button rather than a hand-edited settings file.
+                text = _("Re-sync all reading"),
+                keep_menu_open = true,
+                enabled_func = function() return self:isPaired() end,
+                callback = function()
+                    self.settings:saveSetting("high_water", 0)
+                    self.settings:flush()
+                    UIManager:show(InfoMessage:new{
+                        text = _("Sending your whole reading history again. Anything already stored is recognised and skipped."),
+                        timeout = 6 })
+                    self:syncNow(true)
+                end,
+            },
+            {
                 text_func = function() return self:statusLine() end,
                 keep_menu_open = true,
                 callback = function() self:showStatus() end,
