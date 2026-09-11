@@ -51,10 +51,16 @@ local BATCH = 500
 -- being paged behind a cursor — see collectAnnotations for why that is the right trade.
 local ANNOTATIONS_CAP = 5000
 
--- PAGE_BUDGET caps how many pages one sync will capture. The rest go on the next sync:
--- a reader that freezes for two minutes is a broken reader, and the work finishes either
--- way.
-local PAGE_BUDGET = 12
+-- The capture budget: a TIME limit with a generous count behind it.
+--
+-- PAGE_BUDGET was 12, picked before there was any evidence of what a capture costs. There
+-- now is: a real sync captured 12 of 12 with no complaint from the reader. A count was the
+-- wrong shape anyway — twelve scanned PDFs and twelve small epubs are not the same work —
+-- so the limit is now the thing actually being protected, which is how long the reader is
+-- unresponsive. The count remains as a backstop against a pathological book returning
+-- instantly and looping.
+local PAGE_SECONDS = 45
+local PAGE_BUDGET = 200
 
 
 function ZmSync:init()
@@ -544,6 +550,7 @@ function ZmSync:collectAnnotations()
     -- capture that fails on every book would otherwise be perfectly silent, which is
     -- exactly how this went unnoticed for two syncs.
     local attempted, failed, firstError = 0, 0, nil
+    local deadline = os.time() + PAGE_SECONDS
 
     files = eachSidecar(root, function(t)
         -- NOT named md5: the module-level `md5` is the hash FUNCTION, and shadowing it
@@ -560,7 +567,7 @@ function ZmSync:collectAnnotations()
                 -- while the budget holds; whatever is left is picked up next sync.
                 if a.kind == "bookmark" and (text == nil or text == "") and a.page and a.page > 0 then
                     local key = bmd5 .. ":" .. tostring(a.page)
-                    if not captured[key] and budget > 0 then
+                    if not captured[key] and budget > 0 and os.time() < deadline then
                         budget = budget - 1
                         attempted = attempted + 1
                         local page, err = self:pageText(paths[bmd5], a.page)
@@ -602,6 +609,7 @@ function ZmSync:collectAnnotations()
     local report = ""
     if attempted > 0 then
         report = string.format("%d attempted, %d captured, %d failed", attempted, newlyCaptured, failed)
+        if os.time() >= deadline then report = report .. " (time budget reached; more next sync)" end
         if firstError then report = report .. ": " .. firstError end
     end
     return events, files, report

@@ -328,7 +328,11 @@ func annotationBlock(an ReadEvent, loc *time.Location, showTime bool) template.H
 	if strings.TrimSpace(an.Text) != "" {
 		fmt.Fprintf(&b, `<p class="ko-quote-text">%s</p>`, webui.Text(an.Text))
 	} else {
-		fmt.Fprintf(&b, `<p class="ko-quote-text muted">A bookmark, with no quote.</p>`)
+		// SAYS WHAT IS HAPPENING. "A bookmark, with no quote" described the record and
+		// not the situation: the page IS coming, the reader just has not synced enough
+		// times to have fetched it yet. A placeholder that reads like a dead end sends
+		// someone looking for a bug instead of pressing sync.
+		fmt.Fprintf(&b, `<p class="ko-quote-text muted">A bookmark — its page has not been captured yet. It arrives on a future sync.</p>`)
 	}
 	if strings.TrimSpace(an.Note) != "" && strings.TrimSpace(an.Note) != strings.TrimSpace(an.Text) {
 		fmt.Fprintf(&b, `<p class="ko-quote-note">%s</p>`, webui.Text(an.Note))
