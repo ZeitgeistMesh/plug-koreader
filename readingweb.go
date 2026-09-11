@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -431,10 +432,14 @@ func quoteRows(highlights []ReadEvent, q webui.ListQuery, loc *time.Location) ([
 	}
 	rows := make([]webui.Row, 0, hi-lo)
 	for _, h := range filtered[lo:hi] {
+		// The cell LINKS INTO THE READER. The list is for finding a quote; reading it
+		// belongs on a page that gives it room, so every row is a way in rather than a
+		// clipped preview and a dead end.
 		rows = append(rows, webui.Row{
-			"quote": template.HTML(`<span class="ko-quote-cell">` + string(webui.Text(h.Text)) + `</span>`),
-			"book":  webui.Text(orUntitled(h.Title)),
-			"when":  webui.Text(time.Unix(h.StartTime, 0).In(loc).Format("2006-01-02")),
+			"quote": template.HTML(fmt.Sprintf(`<a class="ko-quote-cell" href="/quote?id=%s">%s</a>`,
+				url.QueryEscape(h.ID), webui.Text(h.Text))),
+			"book": webui.Text(orUntitled(h.Title)),
+			"when": webui.Text(time.Unix(h.StartTime, 0).In(loc).Format("2006-01-02")),
 		})
 	}
 	return rows, total
@@ -517,7 +522,12 @@ func (a *app) serveReview(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Fprint(w, `</div>`)
 
-	fmt.Fprintf(w, `<form method="post"><input type="hidden" name="id" value="%s"><input type="hidden" name="action" value="suspend">%s</form>`,
+	// ITS OWN .field-row.btn-row. Emitted bare, this form had no .btn-row and therefore
+	// none of the top margin that supplies a control row's clearance, so the button sat
+	// against the grade row's edge. The gap belongs to the container (STYLEGUIDE §3) —
+	// which means a second row of controls needs a second container, not a bare element
+	// after the first one.
+	fmt.Fprintf(w, `<div class="field-row btn-row"><form method="post"><input type="hidden" name="id" value="%s"><input type="hidden" name="action" value="suspend">%s</form></div>`,
 		template.HTMLEscapeString(card.Card.ID),
 		webui.IconTextButton("fa-solid fa-ban", "Never show this again",
 			webui.BtnOpts{Kind: "secondary", Size: "sm", Type: "submit"}))

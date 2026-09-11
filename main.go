@@ -133,6 +133,8 @@ func main() {
 			mux.HandleFunc("/", a.serveReadingRoot)
 			mux.HandleFunc("/day", a.serveDay)
 			mux.HandleFunc("/quotes", a.serveQuotes)
+			mux.HandleFunc("/quote", a.serveQuote)
+			mux.HandleFunc("/books", a.serveBooks)
 			mux.HandleFunc("/review", a.serveReview)
 			mux.HandleFunc("/pair", a.servePair)
 			mux.HandleFunc("/pair/delete", a.servePairDelete)
@@ -178,6 +180,7 @@ func nav(active string) []flowweb.NavLink {
 		// which the reading calendar now owns — so the nav offered the same destination
 		// twice under two names, and the Active check (URL == active) lit both.
 		{Label: "Reading", URL: "/", Icon: "fa-solid fa-calendar-days"},
+		{Label: "Books", URL: "/books", Icon: "fa-solid fa-book"},
 		{Label: "Quotes", URL: "/quotes", Icon: "fa-solid fa-quote-left"},
 		{Label: "Review", URL: "/review", Icon: "fa-solid fa-repeat"},
 		{Label: "Devices", URL: "/pair", Icon: "fa-solid fa-tablet-screen-button"},

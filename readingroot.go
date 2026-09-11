@@ -76,4 +76,21 @@ a.ko-day:hover{outline:2px solid var(--accent);outline-offset:1px}
   overflow:hidden;max-width:60ch}
 .ko-review .ko-quote{font-size:1.1rem}
 .ko-grade{display:inline}
+
+/* The one-quote reader. The passage gets the measure and the size; everything else on
+   the page is metadata under it. max-width is in ch because line LENGTH is what makes
+   prose readable, and it is the one number here that is about the text rather than the
+   viewport. */
+.ko-reader .ko-quote-big{font-size:1.35rem;line-height:1.6;max-width:66ch}
+.ko-meta{display:grid;grid-template-columns:auto 1fr;gap:var(--sp-1) var(--sp-3);
+  margin:var(--sp-3) 0 0;font-size:.85rem}
+.ko-meta dt{color:var(--muted)}
+.ko-meta dd{margin:0}
+.ko-pager{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+  gap:var(--sp-2);margin-top:var(--sp-4)}
+.ko-pager-prev{grid-column:1;justify-self:start}
+.ko-pager-count{grid-column:2;color:var(--muted);font-size:.85rem;white-space:nowrap}
+.ko-pager-next{grid-column:3;justify-self:end}
+a.ko-quote-cell{text-decoration:none}
+a.ko-quote-cell:hover{text-decoration:underline}
 </style>`
