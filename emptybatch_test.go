@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -122,5 +123,75 @@ func TestSchemaCellDoesNotWrap(t *testing.T) {
 	}
 	if got := string(schemaCell("   ")); got != "—" {
 		t.Errorf("blank schema should render an em dash, got %q", got)
+	}
+}
+
+// TestHighWaterIsPerDeviceNotPerTenant is the regression test for a seven-year backfill
+// that vanished with no error reported anywhere.
+//
+// The device pages through its history in ASCENDING start_time order and advances its
+// cursor to whatever the reply acknowledges. When high_water was the largest StartTime
+// for the whole TENANT, a single stray event from ANOTHER device — on production, one
+// left behind by a revoked synthetic device used during bringup — dragged the cursor
+// years forward after the very first batch, and every row in between became unreachable.
+//
+// Measured on production 2026-09-11: 19,768 rows of real history, 3,219 ingested.
+func TestHighWaterIsPerDeviceNotPerTenant(t *testing.T) {
+	a := testApp()
+	ctx := context.Background()
+	old, _, tk := pairedDevice(t, a)
+
+	// A second reader on the SAME account whose newest row is years ahead.
+	other := Device{ID: "other-device", Name: "Someone else's Kobo"}
+	const recent = int64(1756000000) // 2025-08-24
+	if err := a.events.Put(ctx, tk, "stray", &ReadEvent{
+		ID: "stray", Kind: "read", DeviceID: other.ID, StartTime: recent,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Our device sends its OLDEST batch, as a first sync does.
+	const oldest = int64(1576518322) // 2019-12-16
+	res := a.storeEvents(ctx, tk, old, []ReadEvent{
+		{ID: "e1", Kind: "read", StartTime: oldest},
+		{ID: "e2", Kind: "read", StartTime: oldest + 60},
+	})
+
+	if res.Accepted != 2 {
+		t.Fatalf("accepted %d, want 2", res.Accepted)
+	}
+	if res.HighWater != oldest+60 {
+		t.Errorf("high_water = %d, want %d (the newest row THIS device sent).\n"+
+			"Got the other device's %d? Then the cursor has jumped %d days ahead and every "+
+			"row in between is now unreachable — silently, because the device believes the "+
+			"acknowledgement.", res.HighWater, oldest+60, recent, (recent-(oldest+60))/86400)
+	}
+}
+
+// TestHighWaterDoesNotWalkBackwards keeps the property the tenant-wide floor was there to
+// protect: a batch of pure duplicates must still report the device's real progress, not
+// the maximum of that batch alone.
+func TestHighWaterDoesNotWalkBackwards(t *testing.T) {
+	a := testApp()
+	ctx := context.Background()
+	dev, _, tk := pairedDevice(t, a)
+
+	const early, late = int64(1576518322), int64(1700000000)
+	first := a.storeEvents(ctx, tk, dev, []ReadEvent{
+		{ID: "a", Kind: "read", StartTime: early},
+		{ID: "b", Kind: "read", StartTime: late},
+	})
+	if first.HighWater != late {
+		t.Fatalf("high_water = %d, want %d", first.HighWater, late)
+	}
+
+	// The device resends an OLD row it already sent (a retry after a lost reply).
+	again := a.storeEvents(ctx, tk, dev, []ReadEvent{{ID: "a", Kind: "read", StartTime: early}})
+	if again.Duplicate != 1 {
+		t.Errorf("duplicate = %d, want 1", again.Duplicate)
+	}
+	if again.HighWater != late {
+		t.Errorf("high_water walked backwards to %d, want %d — the device would resend "+
+			"everything after it, for ever", again.HighWater, late)
 	}
 }

@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"xf/controller/pkg/dblib"
+	"xf/controller/pkg/flowweb"
 	"xf/controller/pkg/webui"
 )
 
@@ -51,10 +52,16 @@ func (a *app) servePair(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// BEFORE the page chrome. An htmx control swap wants only the #lv-root block, and
+	// BEFORE the page chrome. An htmx control swap wants only the #lv-devices block, and
 	// StartFor has already written a doctype and a nav by the time the list is reached —
 	// so this check has to happen here, not beside the list it belongs to.
-	if r.Header.Get("HX-Request") == "true" && r.Method == http.MethodGet {
+	//
+	// flowweb.WantsFragment, NOT a bare HX-Request test. The shell's navbar is BOOSTED, so
+	// clicking "Devices" is also an htmx request — and answering that with the bare list
+	// replaced the whole page with a naked table. WantsFragment is the house predicate and
+	// excludes exactly that case (HX-Request AND NOT HX-Boosted); a hand-rolled header
+	// check is how the boosted-navigation half gets forgotten.
+	if flowweb.WantsFragment(r) && r.Method == http.MethodGet {
 		devices, _ := a.devices.List(r.Context(), tk)
 		view := a.devicesListView()
 		q := view.ParseListQuery(r)
@@ -98,7 +105,11 @@ func (a *app) servePair(w http.ResponseWriter, r *http.Request) {
 	q := view.ParseListQuery(r)
 	rows, total := deviceRows(devices, q)
 
-	fmt.Fprint(w, `<div class="card">`)
+	// RENDERED BARE, no card around it — the house list layout (compare the ideas list at
+	// /?status=open). A ListView already draws its own surface: controls row, table wrap,
+	// pager. Putting that inside a .card gives the page two nested frames, an inset inside
+	// an inset, which is the "extra container" this page was reported for. The card belongs
+	// to a block of prose or a form, not to a list that is already a component.
 	view.Render(w, q, rows, total)
 	fmt.Fprint(w, `<p class="muted">The token is shown only by its last four characters — the rest is stored as a hash and cannot be read back, here or anywhere else.</p>`)
 	// One button, so no row container and no margin of its own: the paragraph above it
@@ -108,7 +119,6 @@ func (a *app) servePair(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `<form method="post">%s</form>`,
 		webui.IconTextButton("fa-solid fa-key", "Mint a pairing code",
 			webui.BtnOpts{Kind: "primary", Type: "submit"}))
-	fmt.Fprint(w, `</div>`)
 	p.End(w)
 }
 
