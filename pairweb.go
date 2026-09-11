@@ -72,7 +72,9 @@ func (a *app) servePair(w http.ResponseWriter, r *http.Request) {
 
 	p := a.page("/pair")
 	p.StartFor(w, r, "Devices")
-	fmt.Fprint(w, webui.PageHeader("Devices", "Readers that send their reading here"))
+	// NO PageHeader. The nav already says Devices and the ListView's own Title says
+	// "Paired readers", so a third heading restating both was two lines of chrome above
+	// a list that introduces itself.
 
 	if minted != "" {
 		fmt.Fprint(w, `<div class="card"><h3>Type this on your reader</h3>`)
