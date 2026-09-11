@@ -111,6 +111,7 @@ func main() {
 
 			// The human half, behind the ordinary gate.
 			mux.HandleFunc("/pair", a.servePair)
+			mux.HandleFunc("/pair/delete", a.servePairDelete)
 			mux.HandleFunc("/addon", a.serveAddon)
 			mux.HandleFunc("/addon/"+addonDirName+".zip", a.serveAddonZip)
 			mux.HandleFunc("/addon/file/", a.serveAddonFile)

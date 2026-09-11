@@ -89,7 +89,13 @@ func mainOf(t *testing.T, path, page string) string {
 // of them takes its spacing from BaseCSS, which every page of every plug loads — that is
 // the whole reason a plug-owned wrapper is not an acceptable substitute (its stylesheet
 // is attached to a route, while the markup is attached to a function).
-var spacingContainers = regexp.MustCompile(`<div class="(?:field-row|btn-group|action-bar)">.*?</div>`)
+// MATCHED ON THE CLASS LIST, not on an exact attribute value. webui.ButtonRow emits
+// `class="field-row btn-row"` — field-row for the gap between the buttons, btn-row for
+// the clearance above — and an exact-string regex saw no container at all, so it reported
+// the CORRECT adjacency inside a proper ButtonRow as a defect. /addon has used ButtonRow
+// since the original report; this guard had been failing against a fixed page, which also
+// meant the whole suite was red and the build gate refused to ship the plug.
+var spacingContainers = regexp.MustCompile(`<div class="[^"]*\b(?:field-row|btn-group|action-bar)\b[^"]*">.*?</div>`)
 
 // adjacentButtons matches two controls that sit side by side with nothing between them
 // but whitespace — the shape that renders edge to edge.
@@ -216,10 +222,22 @@ func TestMachineValuesRenderAsCodeSoTheyCanWrap(t *testing.T) {
 	}
 	body := gatedGet(t, a, a.servePair, "/pair")
 
-	if !strings.Contains(body, "<code>"+dev.StatsSchema+"</code>") {
-		t.Error("the statistics schema is not in a <code>, which is the role the shared theme " +
-			"dresses — and the rule that carries overflow-wrap:anywhere, without which one " +
-			"unbroken token sets the width of the whole table")
+	// THE SCHEMA NO LONGER WRAPS, and that is a deliberate reversal, reported by the
+	// owner on 2026-09-11: "breaks token and statistics field into lines". The original
+	// fix put this value in a <code>, whose overflow-wrap:anywhere stopped one unbroken
+	// 60-character token setting the table's width — but it bought that by shattering the
+	// string down a column of fragments, which drags every other row's height with it.
+	//
+	// So the ROLE is unchanged (still a <code>, still theme-dressed, still not the .mono
+	// class that styled nothing) and only the wrapping is: one ellipsised line, with the
+	// full value on hover and in the ⓘ details modal. The assertion moves from an exact
+	// string to the two things that actually matter, because <code> now carries a class.
+	if !strings.Contains(body, ">"+dev.StatsSchema+"</code>") {
+		t.Error("the statistics schema is not in a <code>, which is the role the shared theme dresses")
+	}
+	if !strings.Contains(body, `class="ko-schema"`) {
+		t.Error("the schema cell lost its no-wrap class, so the long schema string will " +
+			"shatter into a column of fragments again — the reported defect")
 	}
 	if !strings.Contains(body, "<code>…"+dev.TokenTail+"</code>") {
 		t.Errorf("the token tail is not in a <code>: %q", dev.TokenTail)

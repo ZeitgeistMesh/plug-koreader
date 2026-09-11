@@ -218,6 +218,10 @@ function ZmSync:openStats()
     local path = self:statsPath()
     local lfs = require("libs/libkoreader-lfs")
     if not lfs.attributes(path, "mode") then
+        -- LOGGED, because this returned nil silently. A missing statistics database and
+        -- a working one with nothing new to report both ended as an empty batch and a
+        -- cheerful "Synced.", so the one arrangement that can never work looked fine.
+        logger.warn("zmsync: no statistics database at", path)
         return nil
     end
     local conn_ok, conn = pcall(SQ3.open, path, "ro")
@@ -264,12 +268,35 @@ function ZmSync:describeStats()
     return t .. "(" .. table.concat(cols, ",") .. ")"
 end
 
+-- asArray marks a table so the encoder emits `[]` rather than `{}`.
+--
+-- LuaJSON decides array-vs-object by inspecting the table, and an EMPTY Lua table is
+-- ambiguous — it has no sequential keys, so it encodes as `{}`. The server's `events`
+-- is a []ReadEvent, so an empty sync arrived as `"events":{}` and the whole batch was
+-- refused with "cannot unmarshal object into Go struct field ingestRequest.events".
+--
+-- That broke the heartbeat precisely where it was designed to matter: a sync with
+-- nothing to send is the one that proves the device is alive and reports its schema,
+-- and it was the only kind of sync that could never succeed. Measured on the device:
+-- JSON.encode({}) is "{}", JSON.encode(InitArray({})) is "[]".
+--
+-- Lua cannot express "empty list" without a marker, so EVERY return path that yields
+-- events must go through this — which is why collect() has no bare `{}` left in it.
+local function asArray(t)
+    return require("json").util.InitArray(t)
+end
+
 -- collect reads events strictly AFTER the acknowledged cursor.
+--
+-- The second return value is the SCHEMA STRING, and it doubles as the reason when no
+-- events come back. It reaches the server on every sync, so "absent", "no page table"
+-- and "<table> (query failed)" are distinguishable there from an honest empty batch —
+-- which is the whole point, because from the sofa they all look like "Synced.".
 function ZmSync:collect(since)
     local conn = self:openStats()
-    if not conn then return {}, "absent" end
+    if not conn then return asArray({}), "absent" end
     local t = self:pageTable(conn)
-    if not t then conn:close(); return {}, "no page table" end
+    if not t then conn:close(); return asArray({}), "no page table" end
 
     -- Joined to `book` so each event carries the title and the md5 that identifies
     -- the book across renames. LIMIT because a first sync from a long history is
@@ -284,7 +311,17 @@ function ZmSync:collect(since)
 
     local ok, rows = pcall(function() return conn:exec(sql) end)
     conn:close()
-    if not ok or not rows or not rows[1] then return {}, t end
+    -- A FAILED QUERY AND AN EMPTY ONE ARE NOT THE SAME ANSWER and were collapsed into
+    -- one branch here. "Everything is already acknowledged" is the normal steady state;
+    -- "the query threw" means this device has never synced a row and never will. Both
+    -- produced an identical empty batch, so the failure was invisible.
+    if not ok then
+        logger.warn("zmsync: statistics query failed:", rows)
+        return asArray({}), t .. " (query failed)"
+    end
+    if not rows or not rows[1] then
+        return asArray({}), t
+    end
 
     local events = {}
     for i = 1, #rows[1] do
@@ -349,11 +386,20 @@ function ZmSync:syncNow(interactive)
     if res.high_water and tonumber(res.high_water) then
         self.settings:saveSetting("high_water", tonumber(res.high_water))
     end
-    self.settings:saveSetting("last_result", res.message or _("ok"))
+    -- A SYNC THAT SENT NOTHING SAYS SO, and says what it found instead. The server can
+    -- only report on what it received, so "0 accepted" reads as success; the reason the
+    -- batch was empty is known HERE and nowhere else. `schema` carries it: "absent",
+    -- "no page table", "<table> (query failed)", or the table name for an honest
+    -- nothing-new.
+    local summary = res.message or _("ok")
+    if #events == 0 then
+        summary = T(_("%1 — sent 0 events (statistics: %2)"), summary, schema)
+    end
+    self.settings:saveSetting("last_result", summary)
     self.settings:flush()
 
     if interactive then
-        UIManager:show(InfoMessage:new{ text = res.message or _("Synced.") })
+        UIManager:show(InfoMessage:new{ text = summary })
     end
     -- More to send? Keep going. A first sync of a long history is many batches and
     -- should not need the reader to press the button once per five hundred pages.

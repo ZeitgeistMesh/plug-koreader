@@ -25,6 +25,7 @@ package main
 // inert even if one arrives.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -76,10 +77,45 @@ type ingestRequest struct {
 	// What the device is, told to us on every sync rather than at pairing: an
 	// e-reader gets upgraded, and the whole reason the first slice exists is to find
 	// out which statistics schema a real device writes.
-	KOReaderVersion string      `json:"koreader_version"`
-	StatsSchema     string      `json:"stats_schema"`
-	DeviceModel     string      `json:"device_model"`
-	Events          []ReadEvent `json:"events"`
+	KOReaderVersion string     `json:"koreader_version"`
+	StatsSchema     string     `json:"stats_schema"`
+	DeviceModel     string     `json:"device_model"`
+	Events          eventBatch `json:"events"`
+}
+
+// eventBatch is []ReadEvent that also accepts `{}` for an empty batch.
+//
+// Lua has ONE table type and cannot distinguish an empty list from an empty map, so its
+// JSON encoders emit `{}` for both unless the caller marks the table. A KOReader device
+// with nothing new to report therefore sent `"events":{}`, and decoding refused the whole
+// request with:
+//
+//	json: cannot unmarshal object into Go struct field ingestRequest.events of type []main.ReadEvent
+//
+// The cost of that refusal was not the lost events — there were none. It was the rest of
+// the message: `koreader_version`, `stats_schema` and `device_model` travel on EVERY sync
+// precisely so an empty one still proves the device is alive and says which schema it
+// found, and that is the single most valuable thing this slice produces. A shape
+// ambiguity in the client's language should not be able to delete it.
+//
+// The device-side marker is the real fix and is applied (zmsync's asArray). This is the
+// other half: be exact about what is accepted. `[]` and `null` and `{}` mean an empty
+// batch; a NON-EMPTY object is still an error, because that is a client sending something
+// it has not thought through and silence would hide it.
+type eventBatch []ReadEvent
+
+func (b *eventBatch) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if bytes.Equal(trimmed, []byte("{}")) || bytes.Equal(trimmed, []byte("null")) {
+		*b = nil
+		return nil
+	}
+	var events []ReadEvent
+	if err := json.Unmarshal(data, &events); err != nil {
+		return err
+	}
+	*b = events
+	return nil
 }
 
 type ingestReply struct {

@@ -15,6 +15,7 @@ package main
 // to the socket with `import stripidentity`, so a forged identity header is inert.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -40,12 +41,26 @@ func (a *app) servePair(w http.ResponseWriter, r *http.Request) {
 		switch r.FormValue("action") {
 		case "revoke":
 			a.revokeDevice(r, tk, strings.TrimSpace(r.FormValue("device")))
+		case "delete":
+			a.deleteDevice(r.Context(), tk, strings.TrimSpace(r.FormValue("device")))
 		default:
 			pc, err := newPairCode(tk)
 			if err == nil && a.pairCodes.Put(r.Context(), pairCodeTenant(), pc.ID, &pc) == nil {
 				minted = pc.ID
 			}
 		}
+	}
+
+	// BEFORE the page chrome. An htmx control swap wants only the #lv-root block, and
+	// StartFor has already written a doctype and a nav by the time the list is reached —
+	// so this check has to happen here, not beside the list it belongs to.
+	if r.Header.Get("HX-Request") == "true" && r.Method == http.MethodGet {
+		devices, _ := a.devices.List(r.Context(), tk)
+		view := a.devicesListView()
+		q := view.ParseListQuery(r)
+		rows, total := deviceRows(devices, q)
+		view.RenderFragment(w, q, rows, total)
+		return
 	}
 
 	p := a.page("/pair")
@@ -72,43 +87,20 @@ func (a *app) servePair(w http.ResponseWriter, r *http.Request) {
 	}
 
 	devices, _ := a.devices.List(r.Context(), tk)
-	sort.Slice(devices, func(i, j int) bool { return devices[i].CreatedAt > devices[j].CreatedAt })
 
-	fmt.Fprint(w, `<div class="card"><h3>Paired readers</h3>`)
-	if len(devices) == 0 {
-		fmt.Fprint(w, `<p class="muted">None yet. Mint a code below, then type it into the plugin on your reader.</p>`)
-	} else {
-		// webui.SimpleTable, NOT hand-written table markup. This is the row the overflow
-		// report pointed at: six columns, one of them a statistics schema like
-		// `page_stat_data(id_book,page,start_time,duration,total_pages)`, inside a
-		// card. A bare table element gets an overflow container ONLY inside BaseCSS's
-		// @media(max-width:640px) — above that it takes its natural width and grows
-		// straight out of the card, which is what the screenshot showed at 1916px.
-		// SimpleTable renders .lv-tablewrap > .lv-table.tbl-stack, so the wrap scrolls
-		// and listViewJS collapses the row to label:value cards at ANY width once it
-		// would overflow. Both assets arrive via ListViewHead() in a.page.
-		rows := make([]webui.TableRow, 0, len(devices))
-		for _, d := range devices {
-			name := webui.Text(d.Name)
-			if d.Revoked {
-				name += " " + webui.Pill("revoked", "muted")
-			}
-			rows = append(rows, webui.TableRow{Cells: []template.HTML{
-				name,
-				codeCell(tokenTail(d.TokenTail)),
-				webui.Text(orDash(d.LastSyncAt)),
-				webui.Text(orDash(d.KOReaderVersion)),
-				codeCell(d.StatsSchema),
-				template.HTML(revokeForm(d)),
-			}})
-		}
-		// The last header is deliberately EMPTY: the actions column names nothing, and
-		// an empty data-label is also what tells the stacked card not to print a label
-		// in front of the revoke button.
-		fmt.Fprint(w, webui.SimpleTable(
-			[]string{"Reader", "Token", "Last sync", "KOReader", "Statistics", ""}, rows))
-		fmt.Fprint(w, `<p class="muted">The token is shown only by its last four characters — the rest is stored as a hash and cannot be read back, here or anywhere else.</p>`)
-	}
+	// THE HOUSE ListView, not SimpleTable. SimpleTable solved the overflow this page
+	// was reported for and nothing else: it is chrome-free, so this list had no search,
+	// no pagination, no column switcher and no way to act on more than one row — while
+	// every other list in the mesh has all four. A device list grows by one per reader
+	// and never shrinks on its own, so "no way to select several and delete them" is the
+	// state it ends up in.
+	view := a.devicesListView()
+	q := view.ParseListQuery(r)
+	rows, total := deviceRows(devices, q)
+
+	fmt.Fprint(w, `<div class="card">`)
+	view.Render(w, q, rows, total)
+	fmt.Fprint(w, `<p class="muted">The token is shown only by its last four characters — the rest is stored as a hash and cannot be read back, here or anywhere else.</p>`)
 	// One button, so no row container and no margin of its own: the paragraph above it
 	// already carries the house paragraph margin. The hand-tuned top margin that used to
 	// sit on this form was a literal off the shared scale, which is the drift the style
@@ -119,6 +111,182 @@ func (a *app) servePair(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, `</div>`)
 	p.End(w)
 }
+
+// devicesListView declares the readers list.
+//
+// The columns are ordered by how often they answer a question, and the two that made the
+// original table unreadable carry a Priority so they collapse FIRST on a narrow screen —
+// their value is never lost, because any hidden column puts a per-row ⓘ button on the row
+// whose modal lists every field. That is the house answer to "this column is long and
+// rarely needed", and it is better than the previous one (let it wrap and hope).
+func (a *app) devicesListView() webui.ListView {
+	return webui.ListView{
+		Action:            "/pair",
+		RootID:            "lv-devices",
+		Title:             "Paired readers",
+		SearchPlaceholder: "Search readers…",
+		EmptyText:         "None yet. Mint a code below, then type it into the plugin on your reader.",
+		PageSizes:         []int{10, 25, 50},
+		Selectable:        true,
+		BulkActions: []webui.BulkAction{
+			{Label: "Delete selected", Path: "/pair/delete", Danger: true, Icon: "fa-solid fa-trash",
+				Confirm: "Permanently delete %n selected readers? Each will have to pair again with a new code."},
+		},
+		Columns: []webui.Column{
+			{Key: "reader", Label: "Reader", Sortable: true},
+			{Key: "lastsync", Label: "Last sync", Sortable: true},
+			{Key: "koreader", Label: "KOReader", Sortable: true, Priority: 1},
+			{Key: "token", Label: "Token", Priority: 2},
+			// The schema string is the longest value on the page — the thing that was
+			// "breaking into lines". Highest priority number, so it is the first to
+			// collapse, and it never wraps: see schemaCell.
+			{Key: "stats", Label: "Statistics", Sortable: true, Priority: 3},
+			{Key: "actions", Label: ""},
+		},
+	}
+}
+
+// deviceRows filters, sorts and pages the readers into ListView rows.
+func deviceRows(devices []Device, q webui.ListQuery) ([]webui.Row, int) {
+	filtered := make([]Device, 0, len(devices))
+	needle := strings.ToLower(strings.TrimSpace(q.Search))
+	for _, d := range devices {
+		if needle != "" {
+			hay := strings.ToLower(strings.Join([]string{
+				d.Name, d.KOReaderVersion, d.StatsSchema, d.DeviceModel, d.TokenTail,
+			}, " "))
+			if !strings.Contains(hay, needle) {
+				continue
+			}
+		}
+		filtered = append(filtered, d)
+	}
+
+	// Newest first by default — a reader you just paired is the one you are looking at.
+	sortKey := func(d Device) string { return d.CreatedAt }
+	switch q.Sort {
+	case "reader":
+		sortKey = func(d Device) string { return strings.ToLower(d.Name) }
+	case "lastsync":
+		sortKey = func(d Device) string { return d.LastSyncAt }
+	case "koreader":
+		sortKey = func(d Device) string { return d.KOReaderVersion }
+	case "stats":
+		sortKey = func(d Device) string { return d.StatsSchema }
+	}
+	desc := q.Desc
+	if q.Sort == "" {
+		desc = true // CreatedAt descending
+	}
+	sort.SliceStable(filtered, func(i, j int) bool {
+		if desc {
+			return sortKey(filtered[i]) > sortKey(filtered[j])
+		}
+		return sortKey(filtered[i]) < sortKey(filtered[j])
+	})
+
+	total := len(filtered)
+	lo := q.Offset()
+	if lo > total {
+		lo = total
+	}
+	hi := lo + q.Limit()
+	if hi > total {
+		hi = total
+	}
+
+	rows := make([]webui.Row, 0, hi-lo)
+	for _, d := range filtered[lo:hi] {
+		name := webui.Text(d.Name)
+		if d.Revoked {
+			name += " " + webui.Pill("revoked", "muted")
+		}
+		rows = append(rows, webui.Row{
+			webui.RowSelectKey: template.HTML(d.ID),
+			"reader":           name,
+			"lastsync":         webui.Text(orDash(d.LastSyncAt)),
+			"koreader":         webui.Text(orDash(d.KOReaderVersion)),
+			"token":            codeCell(tokenTail(d.TokenTail)),
+			"stats":            schemaCell(d.StatsSchema),
+			"actions":          template.HTML(revokeForm(d)),
+		})
+	}
+	return rows, total
+}
+
+// servePairDelete is the bulk-delete endpoint the selection toolbar posts to.
+func (a *app) servePairDelete(w http.ResponseWriter, r *http.Request) {
+	caller, ok := a.webGate(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "could not read the selection", http.StatusBadRequest)
+		return
+	}
+	tk := tenant(caller)
+	for _, id := range r.Form["id"] {
+		a.deleteDevice(r.Context(), tk, strings.TrimSpace(id))
+	}
+	// The toolbar removes the rows itself on a 2xx; a plain OK is the whole contract.
+	w.WriteHeader(http.StatusOK)
+}
+
+// deleteDevice removes a reader for good — the record AND its token reference.
+//
+// REVOKING WAS THE ONLY THING ON OFFER and it is not the same thing. A revoked device
+// stops syncing but stays on the page for ever, so a list of readers only ever grows:
+// every test pairing, every reader you sold, every code you claimed twice. That is what
+// "impossible to delete old devices" meant.
+//
+// Both records go, and the TOKEN REFERENCE FIRST, matching revokeDevice's order and for
+// the same reason: the reference is what an ingest actually loads, so if the second write
+// fails the surviving state is a device row nothing can authenticate against, rather than
+// a live token pointing at a device that no longer exists.
+//
+// Deleting is not a security downgrade on revoking: the token was only ever stored as a
+// SHA-256, and removing the reference is exactly what makes the bearer token unusable.
+func (a *app) deleteDevice(ctx context.Context, t dblib.TenantKey, id string) {
+	if id == "" {
+		return
+	}
+	dev, err := a.devices.Get(ctx, t, id)
+	if err != nil || dev == nil {
+		return
+	}
+	if dev.TokenSHA256 != "" {
+		_ = a.tokens.Delete(ctx, pairCodeTenant(), dev.TokenSHA256)
+	}
+	_ = a.devices.Delete(ctx, t, dev.ID)
+}
+
+// schemaCell renders the statistics schema so it TRUNCATES instead of wrapping.
+//
+// codeCell's <code> carries overflow-wrap:anywhere, which is right for a token tail and
+// wrong for this: `page_stat_data(id_book,page,start_time,duration,total_pages)` is 60-odd
+// unbroken characters, so "wrap anywhere" shattered it into a column of fragments and
+// dragged every other row's height with it — the "breaks into lines" report.
+//
+// One line, ellipsised, with the full string on hover and in the ⓘ details modal. The
+// value is never hidden, it just stops setting the table's shape.
+func schemaCell(s string) template.HTML {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return webui.Text("—")
+	}
+	return `<code class="ko-schema" title="` + webui.Text(s) + `">` + webui.Text(s) + `</code>`
+}
+
+// koSchemaCSS is the one rule schemaCell needs. Scoped to its own class so it cannot
+// reach the token cell, which genuinely does want to wrap.
+const koSchemaCSS = `<style>
+.ko-schema{display:inline-block;max-width:28ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
+.lv-detail .ko-schema,.lv-modal .ko-schema{max-width:none;white-space:normal;overflow-wrap:anywhere}
+</style>`
 
 func revokeForm(d Device) string {
 	if d.Revoked {
