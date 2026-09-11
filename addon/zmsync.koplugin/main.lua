@@ -539,6 +539,11 @@ function ZmSync:collectAnnotations()
     local paths = bookPathsFrom(root)
     local captured = self:capturedPages()
     local budget, newlyCaptured = PAGE_BUDGET, 0
+    -- Attempts and the first failure REACH THE SERVER (see syncNow). logger.warn goes
+    -- nowhere observable from here — no zmsync line has ever reached crash.log — so a
+    -- capture that fails on every book would otherwise be perfectly silent, which is
+    -- exactly how this went unnoticed for two syncs.
+    local attempted, failed, firstError = 0, 0, nil
 
     files = eachSidecar(root, function(t)
         -- NOT named md5: the module-level `md5` is the hash FUNCTION, and shadowing it
@@ -557,6 +562,7 @@ function ZmSync:collectAnnotations()
                     local key = bmd5 .. ":" .. tostring(a.page)
                     if not captured[key] and budget > 0 then
                         budget = budget - 1
+                        attempted = attempted + 1
                         local page, err = self:pageText(paths[bmd5], a.page)
                         if page and page ~= "" then
                             text = page
@@ -567,6 +573,8 @@ function ZmSync:collectAnnotations()
                             -- retried on every sync for ever. It costs a book-open each
                             -- time and the answer will not change on its own.
                             captured[key] = true
+                            failed = failed + 1
+                            if not firstError then firstError = tostring(err) end
                             logger.warn("zmsync: bookmark page", a.page, "of", bmd5, "->", tostring(err))
                         end
                     end
@@ -583,11 +591,20 @@ function ZmSync:collectAnnotations()
             end
         end
     end)
-    if newlyCaptured > 0 then
+    -- SAVED ON ANY ATTEMPT, not only on success. Guarding this on newlyCaptured meant a
+    -- sync where every capture failed wrote no ledger at all — so the same twelve books
+    -- were reopened on the next sync, for ever, and the absent ledger looked exactly like
+    -- "the capture never ran".
+    if attempted > 0 then
         self.settings:saveSetting("captured_pages", captured)
         self.settings:flush()
     end
-    return events, files
+    local report = ""
+    if attempted > 0 then
+        report = string.format("%d attempted, %d captured, %d failed", attempted, newlyCaptured, failed)
+        if firstError then report = report .. ": " .. firstError end
+    end
+    return events, files, report
 end
 
 -- libraryRoot is where the books are. KOReader's own home_dir when it is set, because
@@ -711,9 +728,9 @@ function ZmSync:syncNow(interactive, continuing)
     -- Riding the first request costs exactly the same one copy per chain and owes nothing
     -- to how the reading backfill goes. The quotes are what the reader is waiting to see;
     -- they should not be behind seven years of page rows in the queue.
-    local annotations, sidecars = {}, 0
+    local annotations, sidecars, captureReport = {}, 0, ""
     if not continuing then
-        annotations, sidecars = self:collectAnnotations()
+        annotations, sidecars, captureReport = self:collectAnnotations()
         for _, a in ipairs(annotations) do
             events[#events + 1] = a
         end
@@ -727,6 +744,7 @@ function ZmSync:syncNow(interactive, continuing)
         stats_schema = schema,
         device_model = self:deviceName(),
         utc_offset = self:utcOffset(),
+        capture_report = captureReport,
         events = asArray(events),
     }, self:token())
 
@@ -763,6 +781,9 @@ function ZmSync:syncNow(interactive, continuing)
     local summary = res.message or _("ok")
     if #annotations > 0 then
         summary = T(_("%1 — %2 annotations from %3 books"), summary, #annotations, sidecars)
+    end
+    if captureReport ~= "" then
+        summary = summary .. " — pages: " .. captureReport
     end
     if #events == 0 then
         summary = T(_("%1 — sent 0 events (statistics: %2)"), summary, schema)

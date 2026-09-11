@@ -153,6 +153,7 @@ func (a *app) devicesListView() webui.ListView {
 			// "breaking into lines". Highest priority number, so it is the first to
 			// collapse, and it never wraps: see schemaCell.
 			{Key: "stats", Label: "Statistics", Sortable: true, Priority: 3},
+			{Key: "pages", Label: "Page capture", Priority: 3},
 			{Key: "actions", Label: ""},
 		},
 	}
@@ -165,7 +166,7 @@ func deviceRows(devices []Device, q webui.ListQuery) ([]webui.Row, int) {
 	for _, d := range devices {
 		if needle != "" {
 			hay := strings.ToLower(strings.Join([]string{
-				d.Name, d.KOReaderVersion, d.StatsSchema, d.DeviceModel, d.TokenTail,
+				d.Name, d.KOReaderVersion, d.StatsSchema, d.DeviceModel, d.TokenTail, d.CaptureReport,
 			}, " "))
 			if !strings.Contains(hay, needle) {
 				continue
@@ -220,6 +221,7 @@ func deviceRows(devices []Device, q webui.ListQuery) ([]webui.Row, int) {
 			"koreader":         webui.Text(orDash(d.KOReaderVersion)),
 			"token":            codeCell(tokenTail(d.TokenTail)),
 			"stats":            schemaCell(d.StatsSchema),
+			"pages":            schemaCell(d.CaptureReport),
 			"actions":          template.HTML(revokeForm(d)),
 		})
 	}

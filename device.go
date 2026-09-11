@@ -108,6 +108,11 @@ type Device struct {
 	// Zero means "not reported", which is also the value an unconfigured device sends,
 	// and both resolve to UTC. That collision is deliberate: they want the same answer.
 	UTCOffset int
+
+	// CaptureReport is what the device last said about capturing bookmarked pages —
+	// "12 attempted, 0 captured, 12 failed: <reason>". Surfaced on the Devices page,
+	// because a failure that only exists in an e-reader's log does not exist.
+	CaptureReport string
 }
 
 var errNoSuchCode = errors.New("that code is not valid — check it, or mint a new one")

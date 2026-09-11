@@ -89,7 +89,12 @@ type ingestRequest struct {
 	StatsSchema     string     `json:"stats_schema"`
 	DeviceModel     string     `json:"device_model"`
 	// UTCOffset is the device's offset from UTC in seconds — see Device.UTCOffset.
-	UTCOffset int        `json:"utc_offset"`
+	UTCOffset int `json:"utc_offset"`
+	// CaptureReport is the device's account of turning bookmarks into quotes. It is
+	// stored and shown because the device's own log is not observable from here — no
+	// zmsync warning has ever reached its crash.log, so a capture failing on every book
+	// was completely silent.
+	CaptureReport string     `json:"capture_report"`
 	Events    eventBatch `json:"events"`
 }
 
@@ -235,6 +240,9 @@ func (a *app) serveIngest(w http.ResponseWriter, r *http.Request) {
 	// can change (the owner sets a timezone, or travels) and the first symptom would be
 	// every reading day quietly moving.
 	dev.UTCOffset = req.UTCOffset
+	if v := strings.TrimSpace(scrubText(req.CaptureReport)); v != "" {
+		dev.CaptureReport = v
+	}
 	if v := strings.TrimSpace(req.StatsSchema); v != "" {
 		dev.StatsSchema = v
 	}
