@@ -123,10 +123,36 @@ type ingestReply struct {
 	Accepted  int  `json:"accepted"`
 	Duplicate int  `json:"duplicate"`
 	Rejected  int  `json:"rejected"`
-	// HighWater is the largest StartTime this server has now stored for this device.
-	// The device advances its cursor to what the SERVER acknowledged, never to what it
-	// read — an acknowledgement that never arrived must cost a resend, not a gap.
-	HighWater int64  `json:"high_water"`
+	// HighWater is the largest StartTime IN THIS BATCH (stored or already held). The
+	// device advances its cursor to what the SERVER acknowledged, never to what it read —
+	// an acknowledgement that never arrived must cost a resend, not a gap.
+	//
+	// IT IS NOT "THE LARGEST WE HAVE STORED", and that distinction ate a seven-year
+	// backfill. The device pages ASCENDING, so the cursor has to be a CONTIGUOUS
+	// watermark — "everything up to here has been sent" — and a maximum is not one. Any
+	// single recent row already on the server (another device's, or this device's own
+	// from an earlier broken run) makes the maximum jump years past where the paging had
+	// actually got to, and every row in between becomes unreachable. Measured on
+	// production 2026-09-11: 19,768 rows of history, 3,219 stored, no error anywhere.
+	//
+	// A batch maximum IS contiguous, because the device asks for `start_time > cursor`
+	// ORDER BY start_time ASC — so everything below this batch's maximum has now been
+	// offered. Two consequences that the device must handle, and does:
+	//
+	//   - an EMPTY batch reports 0. The device must not take that as "start again".
+	//   - a retry of an OLD batch reports an old maximum.
+	//
+	// Both are the same rule, and it belongs on the device because that is where the
+	// cursor lives: zmsync never moves high_water DOWN. Enforcing it here instead is what
+	// produced the maximum-over-everything that caused the data loss.
+	// OMITEMPTY IS LOAD-BEARING for an already-installed plugin. A batch maximum of 0
+	// only happens for an empty batch, and the zmsync build currently on a device saves
+	// whatever high_water it is handed — so sending an explicit 0 would reset that
+	// device's cursor to the beginning on every heartbeat, making it re-send its whole
+	// history for ever. Omitted, the field decodes as nil there and the old client skips
+	// the save, which is the behaviour the new client gets from its forward-only guard.
+	// A real start_time is never 0, so nothing legitimate is hidden by this.
+	HighWater int64  `json:"high_water,omitempty"`
 	Device    string `json:"device"`
 	Message   string `json:"message"`
 }
@@ -226,55 +252,10 @@ func (a *app) storeEvents(ctx context.Context, tk dblib.TenantKey, dev Device, e
 			out.HighWater = ev.StartTime
 		}
 	}
-	// THE HIGH WATER IS THE SERVER'S, over everything stored — not just this batch.
-	// A batch of pure duplicates would otherwise report a cursor lower than the device
-	// already had, and walk it backwards into resending history forever.
-	if hw := a.storedHighWater(ctx, tk, dev.ID); hw > out.HighWater {
-		out.HighWater = hw
-	}
+	// HIGH WATER IS THIS BATCH'S MAXIMUM, and nothing wider. See the long note on
+	// ingestReply.HighWater for why a "largest stored" watermark cannot work here.
 	out.Message = fmt.Sprintf("%d new, %d already had, %d rejected", out.Accepted, out.Duplicate, out.Rejected)
 	return out
-}
-
-// storedHighWater is the largest StartTime on record FOR THIS DEVICE.
-//
-// It was the largest for the whole TENANT, and that silently ate a seven-year backfill.
-//
-// The device pages through its history in ASCENDING start_time order, advancing its
-// cursor to whatever this reply acknowledges. A tenant-wide maximum is not that device's
-// progress — it is the newest row any device ever sent. So:
-//
-//	batch 1  → the oldest 500 rows (2019-12 …) are stored
-//	reply    → high_water = max(this batch, EVERY other device's newest row)
-//	batch 2  → "start_time > <that>", which is years ahead of where it had got to
-//
-// MEASURED on production 2026-09-11: one revoked synthetic device left behind by the
-// bringup held a single event dated 2025-08-24. A real Kobo with 19,768 rows of history
-// synced 3,219 of them — the first batch, then everything after that synthetic
-// timestamp — and skipped roughly 16,000 rows in between. Nothing reported an error;
-// the device said "Synced." each time, because from its side the server had acknowledged
-// a cursor and it believed it.
-//
-// Per-device is the honest answer to "how far has THIS reader got", which is the only
-// question the cursor is asking. The comment this replaces worried that a batch of pure
-// duplicates would report a cursor LOWER than the device already held and walk it
-// backwards — a real concern, and still handled, but on the device, where the cursor
-// lives: zmsync never moves high_water down. Guarding it here cost more than it saved.
-func (a *app) storedHighWater(ctx context.Context, tk dblib.TenantKey, deviceID string) int64 {
-	all, err := a.events.List(ctx, tk)
-	if err != nil {
-		return 0
-	}
-	var hw int64
-	for _, e := range all {
-		if e.DeviceID != deviceID {
-			continue
-		}
-		if e.StartTime > hw {
-			hw = e.StartTime
-		}
-	}
-	return hw
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

@@ -383,8 +383,18 @@ function ZmSync:syncNow(interactive)
     -- THE CURSOR MOVES TO WHAT THE SERVER ACKNOWLEDGED. Never to the largest row we
     -- read: if the reply was lost the rows must be sent again, and because ids are
     -- content-derived that costs nothing but bandwidth.
-    if res.high_water and tonumber(res.high_water) then
-        self.settings:saveSetting("high_water", tonumber(res.high_water))
+    --
+    -- AND IT ONLY EVER MOVES FORWARD. The server reports the maximum start_time in THIS
+    -- batch, which is the only value that is a contiguous watermark for ascending paging
+    -- (see ingestReply.HighWater). That makes two ordinary replies carry a lower number
+    -- than we already hold — an empty heartbeat reports 0, and a retry of an older batch
+    -- reports an older maximum — and taking either at face value would restart the whole
+    -- history. Holding the floor HERE is what lets the server stay honest about what one
+    -- batch actually proved; the alternative, a server-side maximum over everything
+    -- stored, is what silently skipped ~16,000 rows of this reader's history.
+    local ack = tonumber(res.high_water)
+    if ack and ack > (tonumber(self.settings:readSetting("high_water")) or 0) then
+        self.settings:saveSetting("high_water", ack)
     end
     -- A SYNC THAT SENT NOTHING SAYS SO, and says what it found instead. The server can
     -- only report on what it received, so "0 accepted" reads as success; the reason the

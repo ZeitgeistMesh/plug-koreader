@@ -126,33 +126,33 @@ func TestSchemaCellDoesNotWrap(t *testing.T) {
 	}
 }
 
-// TestHighWaterIsPerDeviceNotPerTenant is the regression test for a seven-year backfill
-// that vanished with no error reported anywhere.
+// TestHighWaterIsThisBatchNotEverythingStored is the regression test for a seven-year
+// backfill that vanished with no error reported anywhere.
 //
-// The device pages through its history in ASCENDING start_time order and advances its
-// cursor to whatever the reply acknowledges. When high_water was the largest StartTime
-// for the whole TENANT, a single stray event from ANOTHER device — on production, one
-// left behind by a revoked synthetic device used during bringup — dragged the cursor
-// years forward after the very first batch, and every row in between became unreachable.
+// The device pages ASCENDING and advances its cursor to what the reply acknowledges, so
+// the cursor must be a CONTIGUOUS watermark. When high_water was "the largest StartTime
+// stored", a single recent row already on the server dragged it years past where the
+// paging had got to, and everything in between became unreachable.
 //
 // Measured on production 2026-09-11: 19,768 rows of real history, 3,219 ingested.
-func TestHighWaterIsPerDeviceNotPerTenant(t *testing.T) {
+func TestHighWaterIsThisBatchNotEverythingStored(t *testing.T) {
 	a := testApp()
 	ctx := context.Background()
-	old, _, tk := pairedDevice(t, a)
+	dev, _, tk := pairedDevice(t, a)
 
-	// A second reader on the SAME account whose newest row is years ahead.
-	other := Device{ID: "other-device", Name: "Someone else's Kobo"}
-	const recent = int64(1756000000) // 2025-08-24
-	if err := a.events.Put(ctx, tk, "stray", &ReadEvent{
-		ID: "stray", Kind: "read", DeviceID: other.ID, StartTime: recent,
+	// A recent row already on the server. On production this came from a revoked
+	// synthetic device; it is just as fatal when it is the device's OWN row from an
+	// earlier broken run, which is why this test stores it against the same device.
+	const recent = int64(1789147111) // 2026-09-11
+	if err := a.events.Put(ctx, tk, "recent", &ReadEvent{
+		ID: "recent", Kind: "read", DeviceID: dev.ID, StartTime: recent,
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	// Our device sends its OLDEST batch, as a first sync does.
+	// The device sends its OLDEST batch, as a first sync does.
 	const oldest = int64(1576518322) // 2019-12-16
-	res := a.storeEvents(ctx, tk, old, []ReadEvent{
+	res := a.storeEvents(ctx, tk, dev, []ReadEvent{
 		{ID: "e1", Kind: "read", StartTime: oldest},
 		{ID: "e2", Kind: "read", StartTime: oldest + 60},
 	})
@@ -161,37 +161,52 @@ func TestHighWaterIsPerDeviceNotPerTenant(t *testing.T) {
 		t.Fatalf("accepted %d, want 2", res.Accepted)
 	}
 	if res.HighWater != oldest+60 {
-		t.Errorf("high_water = %d, want %d (the newest row THIS device sent).\n"+
-			"Got the other device's %d? Then the cursor has jumped %d days ahead and every "+
-			"row in between is now unreachable — silently, because the device believes the "+
-			"acknowledgement.", res.HighWater, oldest+60, recent, (recent-(oldest+60))/86400)
+		t.Errorf("high_water = %d, want %d (the newest row in THIS batch).\n"+
+			"Got %d? Then the cursor has jumped %d days past where the paging actually "+
+			"reached, and every row in between is unreachable — silently, because the "+
+			"device believes the acknowledgement.",
+			res.HighWater, oldest+60, recent, (recent-(oldest+60))/86400)
 	}
 }
 
-// TestHighWaterDoesNotWalkBackwards keeps the property the tenant-wide floor was there to
-// protect: a batch of pure duplicates must still report the device's real progress, not
-// the maximum of that batch alone.
-func TestHighWaterDoesNotWalkBackwards(t *testing.T) {
+// TestEmptyBatchDoesNotClaimProgress pins the other half of the contract: a heartbeat
+// proved nothing about any row, so it must report 0 and let the device hold its floor.
+// (The device-side guard is in zmsync's syncNow: the cursor only ever moves forward.)
+func TestEmptyBatchDoesNotClaimProgress(t *testing.T) {
+	a := testApp()
+	ctx := context.Background()
+	dev, _, tk := pairedDevice(t, a)
+
+	if err := a.events.Put(ctx, tk, "x", &ReadEvent{
+		ID: "x", Kind: "read", DeviceID: dev.ID, StartTime: 1700000000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	res := a.storeEvents(ctx, tk, dev, nil)
+	if res.HighWater != 0 {
+		t.Errorf("an empty batch reported high_water = %d; it proved nothing about any "+
+			"row and must report 0", res.HighWater)
+	}
+}
+
+// TestDuplicateBatchStillReportsItsOwnMaximum: a resent batch is evidence that everything
+// up to ITS maximum is held, which is exactly what the device should be told.
+func TestDuplicateBatchStillReportsItsOwnMaximum(t *testing.T) {
 	a := testApp()
 	ctx := context.Background()
 	dev, _, tk := pairedDevice(t, a)
 
 	const early, late = int64(1576518322), int64(1700000000)
-	first := a.storeEvents(ctx, tk, dev, []ReadEvent{
-		{ID: "a", Kind: "read", StartTime: early},
-		{ID: "b", Kind: "read", StartTime: late},
-	})
-	if first.HighWater != late {
+	batch := []ReadEvent{{ID: "a", Kind: "read", StartTime: early}, {ID: "b", Kind: "read", StartTime: late}}
+	if first := a.storeEvents(ctx, tk, dev, batch); first.HighWater != late {
 		t.Fatalf("high_water = %d, want %d", first.HighWater, late)
 	}
-
-	// The device resends an OLD row it already sent (a retry after a lost reply).
-	again := a.storeEvents(ctx, tk, dev, []ReadEvent{{ID: "a", Kind: "read", StartTime: early}})
-	if again.Duplicate != 1 {
-		t.Errorf("duplicate = %d, want 1", again.Duplicate)
+	again := a.storeEvents(ctx, tk, dev, batch)
+	if again.Duplicate != 2 {
+		t.Errorf("duplicate = %d, want 2", again.Duplicate)
 	}
 	if again.HighWater != late {
-		t.Errorf("high_water walked backwards to %d, want %d — the device would resend "+
-			"everything after it, for ever", again.HighWater, late)
+		t.Errorf("a resent batch reported %d, want %d — a duplicate is still proof the "+
+			"row is held", again.HighWater, late)
 	}
 }

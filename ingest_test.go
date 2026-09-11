@@ -176,21 +176,49 @@ func TestAnEventWithNoIDIsRejectedRatherThanStored(t *testing.T) {
 	}
 }
 
-// THE HIGH WATER MUST NEVER GO BACKWARDS. A batch of pure duplicates would otherwise
-// report a cursor lower than the device already had and walk it into resending forever.
-func TestAnEmptyOrDuplicateBatchDoesNotRewindTheCursor(t *testing.T) {
+// THE CURSOR MUST NEVER GO BACKWARDS — and this test used to assert that of the SERVER'S
+// REPLY, which is what broke the backfill.
+//
+// Holding the floor server-side meant answering every batch with the largest StartTime
+// stored, and that is not a contiguous watermark: one recent row already on record
+// dragged the reply years past where the device's ascending paging had actually reached,
+// stranding everything in between. Measured on production 2026-09-11 — 19,768 rows of
+// history, 3,219 stored, and not one error reported.
+//
+// So the guarantee MOVED to where the cursor lives. The reply now states only what this
+// batch proved; zmsync's syncNow refuses to move high_water down. The invariant is
+// unchanged and the responsibility is in the right place — see ingestReply.HighWater.
+//
+// What the SERVER promises, and what is testable here:
+//   - a batch reports its own maximum, duplicates included (a duplicate is still proof
+//     the row is held);
+//   - an empty batch proved nothing and reports 0.
+//
+// The device-side floor is Lua and is asserted by the shape of the reply it must survive,
+// which is exactly what this test now pins.
+func TestTheReplyStatesOnlyWhatThisBatchProved(t *testing.T) {
 	a := testApp()
 	_, token, _ := pairedDevice(t, a)
 	const base = int64(1_700_000_000)
 	_, first := ingest(t, a, token, ingestRequest{Events: sampleEvents(3, base)})
-
-	_, empty := ingest(t, a, token, ingestRequest{Events: nil})
-	if empty.HighWater != first.HighWater {
-		t.Errorf("an EMPTY sync moved the cursor from %d to %d", first.HighWater, empty.HighWater)
+	if first.HighWater <= base {
+		t.Fatalf("high_water = %d, want the batch maximum above %d", first.HighWater, base)
 	}
+
+	// An empty heartbeat proves nothing about any row.
+	_, empty := ingest(t, a, token, ingestRequest{Events: nil})
+	if empty.HighWater != 0 {
+		t.Errorf("an empty sync reported high_water = %d, want 0 — it proved nothing, and "+
+			"claiming progress here is what a server-side floor did wrong", empty.HighWater)
+	}
+
+	// A resent batch reports ITS maximum — evidence, not progress beyond itself.
 	_, dup := ingest(t, a, token, ingestRequest{Events: sampleEvents(1, base)})
-	if dup.HighWater < first.HighWater {
-		t.Errorf("a duplicate batch rewound the cursor from %d to %d", first.HighWater, dup.HighWater)
+	if dup.Duplicate != 1 {
+		t.Errorf("duplicate = %d, want 1", dup.Duplicate)
+	}
+	if dup.HighWater != base {
+		t.Errorf("a duplicate batch reported %d, want its own maximum %d", dup.HighWater, base)
 	}
 }
 
