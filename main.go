@@ -34,7 +34,6 @@ type app struct {
 	events    dblib.DocStore[ReadEvent]
 	tokens    dblib.DocStore[TokenRef]
 	cards     dblib.DocStore[Card]
-	pages     dblib.DocStore[PageCapture]
 
 	// Derived state. index caches the aggregate over events (summary.go); tz caches the
 	// caller→timezone resolve. Both are rebuilt rather than persisted — they are a view
@@ -96,13 +95,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("plug-koreader: card store: %v", err)
 	}
-	pages, err := dblib.NewPostgresDocStore[PageCapture](ctx, pg, collPages)
-	if err != nil {
-		log.Fatalf("plug-koreader: page store: %v", err)
-	}
 
 	a := &app{items: items, webGroup: base.WebGroup,
-		devices: devices, pairCodes: pairCodes, events: events, tokens: tokens, cards: cards, pages: pages,
+		devices: devices, pairCodes: pairCodes, events: events, tokens: tokens, cards: cards,
 		index: newIndexCache(),
 		publicURL: plugcfg.Env("PLUG_KOREADER_PUBLIC_URL", plugcfg.SvcURL("koreader"))}
 	a.item = a.itemEntity()
@@ -130,7 +125,6 @@ func main() {
 			// Remote-* header, so a forged one is inert.
 			mux.HandleFunc("/api/pair", a.serveAPIPair)
 			mux.HandleFunc("/api/ingest", a.serveIngest)
-			mux.HandleFunc("/api/page", a.serveAPIPage)
 
 			// The human half, behind the ordinary gate.
 			mux.HandleFunc("/", a.serveReadingRoot)
@@ -138,7 +132,6 @@ func main() {
 			mux.HandleFunc("/quotes", a.serveQuotes)
 			mux.HandleFunc("/quote", a.serveQuote)
 			mux.HandleFunc("/books", a.serveBooks)
-			mux.HandleFunc("/page/request", a.servePageRequest)
 			mux.HandleFunc("/review", a.serveReview)
 			mux.HandleFunc("/pair", a.servePair)
 			mux.HandleFunc("/pair/delete", a.servePairDelete)

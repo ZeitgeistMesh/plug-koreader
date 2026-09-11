@@ -512,6 +512,15 @@ end
 function ZmSync:collectAnnotations()
     local root = self:libraryRoot()
     local events, files = {}, 0
+
+    -- A bookmark has no text of its own, so the page it marks is fetched and becomes its
+    -- text — see the page-capture section. Resolved once for the whole sweep: the path map
+    -- costs a walk of the library and the ledger costs a settings read, and doing either
+    -- per bookmark would turn a linear pass into a quadratic one.
+    local paths = bookPathsFrom(root)
+    local captured = self:capturedPages()
+    local budget, newlyCaptured = PAGE_BUDGET, 0
+
     files = eachSidecar(root, function(t)
         -- NOT named md5: the module-level `md5` is the hash FUNCTION, and shadowing it
         -- here would make the id derivation below call a string.
@@ -522,6 +531,27 @@ function ZmSync:collectAnnotations()
             if #events >= ANNOTATIONS_CAP then return end
             local when = annotationTime(a.datetime)
             if when > 0 then
+                local text, note = a.text, a.note
+                -- A BOOKMARK GETS THE WHOLE PAGE. Only once per (book, page), and only
+                -- while the budget holds; whatever is left is picked up next sync.
+                if a.kind == "bookmark" and (text == nil or text == "") and a.page and a.page > 0 then
+                    local key = bmd5 .. ":" .. tostring(a.page)
+                    if not captured[key] and budget > 0 then
+                        budget = budget - 1
+                        local page, err = self:pageText(paths[bmd5], a.page)
+                        if page and page ~= "" then
+                            text = page
+                            captured[key] = true
+                            newlyCaptured = newlyCaptured + 1
+                        else
+                            -- Recorded as done so a page that CANNOT be read is not
+                            -- retried on every sync for ever. It costs a book-open each
+                            -- time and the answer will not change on its own.
+                            captured[key] = true
+                            logger.warn("zmsync: bookmark page", a.page, "of", bmd5, "->", tostring(err))
+                        end
+                    end
+                end
                 events[#events + 1] = {
                     -- The plan's FALLBACK id, which turns out to be the only one: a
                     -- KOReader annotation carries no id of its own.
@@ -529,11 +559,15 @@ function ZmSync:collectAnnotations()
                     kind = a.kind,
                     bookmd5 = bmd5, title = props.title or "", authors = props.authors or "",
                     page = a.page, starttime = when, duration = 0,
-                    text = a.text, note = a.note, chapter = a.chapter,
+                    text = text, note = note, chapter = a.chapter,
                 }
             end
         end
     end)
+    if newlyCaptured > 0 then
+        self.settings:saveSetting("captured_pages", captured)
+        self.settings:flush()
+    end
     return events, files
 end
 
@@ -552,17 +586,38 @@ end
 
 -- ── page capture ─────────────────────────────────────────────────────────────
 --
--- The web can ask for the full page a highlight came from. It cannot fetch it: the server
--- has never seen the book and the reader is behind NAT and asleep. So a click becomes a
--- REQUEST, handed back in the sync reply, and this is the half that answers it.
+-- A BOOKMARK BECOMES A QUOTE. A highlight carries the sentence you chose; a bookmark
+-- carries only a position, which is useless to read back and impossible to revise from.
+-- So the whole bookmarked page is captured here and sent as that annotation's text.
+--
+-- It happens on the DEVICE and at sync time, not on request from the web, for two reasons
+-- that are not about convenience. An epub is reflowable, so "page 82" is a function of the
+-- font settings currently in force and only the reader knows what it means. And the server
+-- has never seen the book: the text has to come from the only machine that holds it.
+--
+-- CAPTURED ONCE, EVER. Opening a book and rendering a page is the most expensive thing
+-- this plugin does, and a bookmark's page does not change. The ledger below is what stops
+-- a hundred bookmarks becoming a hundred book-opens on every single sync.
+
+-- PAGE_BUDGET caps how many pages one sync will capture. The rest go on the next sync:
+-- a reader that freezes for two minutes after you press a button is a broken reader, and
+-- the work finishes either way.
+local PAGE_BUDGET = 12
+
+-- captured is the local ledger of "md5:page" keys already sent. Kept on the DEVICE because
+-- it is a fact about work this device has done, and re-deriving it from the server would
+-- need a round trip to answer a question we already know the answer to.
+function ZmSync:capturedPages()
+    local c = self.settings:readSetting("captured_pages")
+    if type(c) ~= "table" then c = {} end
+    return c
+end
 
 -- bookPaths maps partial_md5_checksum -> the book's file, read out of the sidecars.
---
--- The server knows a book only by its md5; only the device knows where the file is. The
--- sidecar carries both, which is the same join the annotations already rely on.
-function ZmSync:bookPaths()
+-- The sidecar carries both, which is the same join the annotations already rely on.
+local function bookPathsFrom(root)
     local paths = {}
-    eachSidecar(self:libraryRoot(), function(t)
+    eachSidecar(root, function(t)
         local md5 = t.partial_md5_checksum
         if type(md5) == "string" and md5 ~= "" and type(t.doc_path) == "string" then
             paths[md5] = t.doc_path
@@ -575,40 +630,30 @@ end
 --
 -- getPageText returns the backend's own structure — for mupdf and djvu a list of LINES,
 -- each a list of word boxes — so it is flattened here rather than assumed to be a string.
--- An epub is reflowable and its page numbers depend on the font settings in force, which
--- is exactly why the DEVICE does this and not the server: only the reader knows what page
--- 312 currently means.
 --
--- Every failure returns a REASON. A blank page and an unopenable book look identical from
--- the web, and the whole point of the button is to be able to tell them apart.
+-- Every failure path returns a REASON. It is logged rather than shown, because this runs
+-- unattended during a sync, but a bookmark that never becomes a quote must leave a trail
+-- saying why rather than just staying blank for ever.
 function ZmSync:pageText(path, pageno)
     if type(path) ~= "string" or path == "" then
-        return nil, "this book is not on the reader any more"
+        return nil, "the book is not on this reader"
     end
     local lfs = require("libs/libkoreader-lfs")
     if not lfs.attributes(path, "mode") then
-        return nil, "the file has moved or been deleted: " .. path
+        return nil, "file missing: " .. path
     end
     local ok, DocumentRegistry = pcall(require, "document/documentregistry")
-    if not ok then
-        return nil, "no document registry on this reader"
-    end
+    if not ok then return nil, "no document registry" end
+
     local opened, doc = pcall(function() return DocumentRegistry:openDocument(path) end)
     if not opened or not doc then
-        return nil, "could not open the book: " .. tostring(doc)
+        return nil, "could not open: " .. tostring(doc)
     end
-
     local got, res = pcall(function() return doc:getPageText(pageno) end)
     pcall(function() doc:close() end)
-    if not got then
-        return nil, "could not read the page: " .. tostring(res)
-    end
-    if type(res) == "string" then
-        return res, nil
-    end
-    if type(res) ~= "table" then
-        return nil, "this book format does not expose page text"
-    end
+    if not got then return nil, "getPageText failed: " .. tostring(res) end
+    if type(res) == "string" then return res, nil end
+    if type(res) ~= "table" then return nil, "this format exposes no page text" end
 
     local lines = {}
     for _, line in ipairs(res) do
@@ -627,34 +672,9 @@ function ZmSync:pageText(path, pageno)
         end
     end
     if #lines == 0 then
-        return nil, "the page has no extractable text (a scanned image, perhaps)"
+        return nil, "no extractable text (a scanned page, perhaps)"
     end
     return table.concat(lines, "\n"), nil
-end
-
--- fulfilPageRequests answers what the sync reply asked for.
---
--- Best effort and never fatal: a page that cannot be produced is REPORTED as failed with
--- its reason, so the request stops being re-asked and the web can say what went wrong. A
--- silent skip would leave the button pending for ever.
-function ZmSync:fulfilPageRequests(requests)
-    if type(requests) ~= "table" or #requests == 0 then return 0 end
-    local paths = self:bookPaths()
-    local done = 0
-    for _, req in ipairs(requests) do
-        local md5 = req.book_md5
-        local pageno = tonumber(req.page)
-        if type(md5) == "string" and md5 ~= "" and pageno and pageno > 0 then
-            local text, err = self:pageText(paths[md5], pageno)
-            local ok = self:post("/api/page", {
-                book_md5 = md5, page = pageno,
-                text = text or "", error = err or "",
-            }, self:token())
-            if ok then done = done + 1 end
-            if err then logger.warn("zmsync: page", pageno, "of", md5, "failed:", err) end
-        end
-    end
-    return done
 end
 
 -- ── syncing ──────────────────────────────────────────────────────────────────
@@ -752,9 +772,6 @@ function ZmSync:syncNow(interactive, continuing)
         UIManager:show(InfoMessage:new{ text = summary })
     end
 
-    -- Answer any pages the web asked for. AFTER the cursor is saved, so a slow or failing
-    -- capture can never cost the reading sync that already succeeded.
-    pcall(function() self:fulfilPageRequests(res.page_requests) end)
     -- More to send? Keep going. A first sync of a long history is many batches and
     -- should not need the reader to press the button once per five hundred pages.
     -- KEEP PAGING ON THE READING COUNT, not on #events — the annotations appended above

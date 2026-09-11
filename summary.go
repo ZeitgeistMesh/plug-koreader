@@ -256,12 +256,21 @@ func buildReadingIndex(events []ReadEvent, loc *time.Location) *readingIndex {
 	return idx
 }
 
-// Highlights returns only the annotations carrying a quote. A bookmark marks a place and
-// has nothing to put on a card.
+// Highlights returns every annotation that carries text worth reading back.
+//
+// THE TEST IS TEXT, NOT KIND. A bookmark used to be a place-marker with nothing to put on
+// a card; now the device captures the whole bookmarked page and sends it as that
+// annotation's text, so a bookmark becomes a quote — a longer one, from a passage you
+// marked without selecting a sentence.
+//
+// The Kind is DELIBERATELY LEFT as bookmark rather than rewritten to highlight. Both are
+// quotes for every purpose here, but a whole page and a hand-picked sentence are very
+// different flashcards, and knowing which one you are looking at is worth keeping. The
+// blockquote styles them apart for the same reason.
 func (idx *readingIndex) Highlights() []ReadEvent {
 	out := make([]ReadEvent, 0, len(idx.Annotations))
 	for _, a := range idx.Annotations {
-		if a.Kind == KindHighlight && strings.TrimSpace(a.Text) != "" {
+		if strings.TrimSpace(a.Text) != "" {
 			out = append(out, a)
 		}
 	}

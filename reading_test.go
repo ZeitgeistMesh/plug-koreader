@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -218,5 +219,46 @@ func TestSuspendedCardsLeaveTheQueue(t *testing.T) {
 	}
 	if _, total, _ := a.dueCards(ctx, tk, idx, "2026-09-11", 0); total != 0 {
 		t.Errorf("a suspended quote is still being offered")
+	}
+}
+
+// TestABookmarkWithAPageIsAQuote: the device captures the whole bookmarked page and sends
+// it as that annotation's text, so a bookmark becomes something you can read back and
+// review. The test is TEXT, not Kind.
+func TestABookmarkWithAPageIsAQuote(t *testing.T) {
+	idx := buildReadingIndex([]ReadEvent{
+		{ID: "h", Kind: KindHighlight, BookMD5: "b", StartTime: 1757000000, Text: "a chosen sentence"},
+		{ID: "m", Kind: KindBookmark, BookMD5: "b", Page: 82, StartTime: 1757000100, Text: "the whole of page 82"},
+		{ID: "e", Kind: KindBookmark, BookMD5: "b", Page: 9, StartTime: 1757000200},
+	}, time.UTC)
+
+	quotes := idx.Highlights()
+	if len(quotes) != 2 {
+		t.Fatalf("got %d quotes, want 2 — a bookmark carrying its page is one, an empty one is not", len(quotes))
+	}
+	var kinds []string
+	for _, q := range quotes {
+		kinds = append(kinds, q.Kind)
+	}
+	// The Kind is kept: a whole page and a hand-picked sentence are different flashcards.
+	if !strings.Contains(strings.Join(kinds, ","), KindBookmark) {
+		t.Errorf("the bookmark's provenance was rewritten away: %v", kinds)
+	}
+}
+
+// TestAnUncapturedBookmarkIsNotOfferedForReview — a place-marker with no page yet has
+// nothing on it to remember, and putting a blank card in the queue would be worse than
+// waiting for the next sync.
+func TestAnUncapturedBookmarkIsNotOfferedForReview(t *testing.T) {
+	a := testApp()
+	idx := buildReadingIndex([]ReadEvent{
+		{ID: "e", Kind: KindBookmark, BookMD5: "b", Page: 9, StartTime: 1757000200},
+	}, time.UTC)
+	_, total, err := a.dueCards(context.Background(), tenant("reader@zm.is"), idx, "2026-09-11", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 0 {
+		t.Errorf("an empty bookmark was queued for review: %d due", total)
 	}
 }

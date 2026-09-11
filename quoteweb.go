@@ -167,7 +167,6 @@ func (a *app) serveQuote(w http.ResponseWriter, r *http.Request) {
 				readingDate(shown.StartTime, loc), webui.Text(when.Format("Monday 2 January 2006, 15:04")))))
 	}
 	fmt.Fprint(w, `</dl>`)
-	fmt.Fprint(w, pageContextBlock(a.pageCaptureFor(r.Context(), tk, shown.BookMD5, shown.Page), shown))
 	fmt.Fprint(w, string(reviewqueue.PagerHTML(queue, quotePagerOpts(book))))
 	fmt.Fprint(w, `</div>`)
 	p.End(w)
@@ -229,12 +228,12 @@ func shelf(idx *readingIndex) []BookShelf {
 		if b.Title == "" {
 			b.Title, b.Authors = an.Title, an.Authors
 		}
-		switch an.Kind {
-		case KindHighlight:
-			if strings.TrimSpace(an.Text) != "" {
-				b.Highlights++
-			}
-		case KindBookmark:
+		// Counted by whether it carries text, matching readingIndex.Highlights: a
+		// bookmark whose page has been captured is a quote, and a bookmark still
+		// waiting for its page is not yet one.
+		if strings.TrimSpace(an.Text) != "" {
+			b.Highlights++
+		} else if an.Kind == KindBookmark {
 			b.Bookmarks++
 		}
 		if an.StartTime > b.LastRead {

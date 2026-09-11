@@ -168,10 +168,6 @@ type ingestReply struct {
 	// RejectReason is the first error behind a non-zero Rejected, so a count is never
 	// reported on its own.
 	RejectReason string `json:"reject_reason,omitempty"`
-	// PageRequests are pages the reader has asked for from the web. They ride the sync
-	// REPLY rather than a poll of their own: the device already talks to us on its own
-	// schedule, and a second channel would be a second thing to be asleep for.
-	PageRequests []pendingPageRequest `json:"page_requests,omitempty"`
 }
 
 // bearerToken pulls the token from the request. Two spellings because KOReader's HTTP
@@ -216,7 +212,6 @@ func (a *app) serveIngest(w http.ResponseWriter, r *http.Request) {
 
 	res := a.storeEvents(r.Context(), tk, dev, req.Events)
 	res.Device = dev.Name
-	res.PageRequests = a.pendingPageRequests(r.Context(), tk)
 
 	// THE AGGREGATE IS NOW STALE. This is the only writer of events, so this is the only
 	// place that has to say so — which is what makes the cache in summary.go a real

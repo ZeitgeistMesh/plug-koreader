@@ -21,7 +21,6 @@ func testApp() *app {
 		events:    dblib.NewFakeDocStore[ReadEvent](),
 		tokens:    dblib.NewFakeDocStore[TokenRef](),
 		cards:     dblib.NewFakeDocStore[Card](),
-		pages:     dblib.NewFakeDocStore[PageCapture](),
 		index:     newIndexCache(),
 	}
 	a.item = a.itemEntity()
