@@ -164,7 +164,7 @@ func (a *app) serveQuote(w http.ResponseWriter, r *http.Request) {
 		when := time.Unix(shown.StartTime, 0).In(loc)
 		metaRowHTML(w, "Annotated", template.HTML(
 			fmt.Sprintf(`<a href="/day?d=%s">%s</a>`,
-				when.Format("2006-01-02"), webui.Text(when.Format("Monday 2 January 2006, 15:04")))))
+				readingDate(shown.StartTime, loc), webui.Text(when.Format("Monday 2 January 2006, 15:04")))))
 	}
 	fmt.Fprint(w, `</dl>`)
 	fmt.Fprint(w, string(reviewqueue.PagerHTML(queue, quotePagerOpts(book))))

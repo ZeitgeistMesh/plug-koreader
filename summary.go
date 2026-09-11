@@ -40,6 +40,27 @@ const (
 	userTZTimeoutSecs = 3
 )
 
+// dayCutoffHour is when a READING DAY rolls over — 04:00, not midnight.
+//
+// Reading is the thing people do last before sleeping, so midnight cuts a single session in
+// half and files the end of Tuesday evening under Wednesday. Reported against a real day:
+// 23:07–23:18 UTC on Tuesday 11 August is 00:07 BST, and the calendar showed Tuesday as a
+// day with no reading on it while the reader plainly remembered reading.
+//
+// plug-diary made exactly this decision for exactly this reason (its DayCutoff, defaulting
+// to 03:00, where "a moment before the cutoff counts as the PREVIOUS day"), so this is the
+// mesh's existing idiom rather than a local fudge. 04:00 because a book at 03:30 is still
+// last night's reading.
+//
+// NOT a timezone workaround. The device's clock is correct UTC and the zone conversion is
+// correct; the cutoff is a separate, honest statement about what a "day of reading" means.
+const dayCutoffHour = 4
+
+// readingDate is the day an instant belongs to, in the reader's zone, honouring the cutoff.
+func readingDate(ts int64, loc *time.Location) string {
+	return time.Unix(ts, 0).In(loc).Add(-dayCutoffHour * time.Hour).Format("2006-01-02")
+}
+
 // BookDay is one book's reading on one day.
 type BookDay struct {
 	BookMD5 string
@@ -152,7 +173,7 @@ func buildReadingIndex(events []ReadEvent, loc *time.Location) *readingIndex {
 			continue
 		}
 		t := time.Unix(ev.StartTime, 0).In(loc)
-		date := t.Format("2006-01-02")
+		date := readingDate(ev.StartTime, loc)
 		day := idx.Days[date]
 		if day == nil {
 			day = &DaySummary{Date: date, FirstAt: ev.StartTime, LastAt: ev.StartTime}

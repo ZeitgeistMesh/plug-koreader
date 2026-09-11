@@ -109,7 +109,12 @@ func currentStreak(idx *readingIndex, loc *time.Location) int {
 	if len(idx.Dates) == 0 {
 		return 0
 	}
-	today := time.Now().In(loc)
+	// Anchored on the current READING day, so a streak is not broken by the hour
+	// between midnight and the cutoff.
+	today, err := time.ParseInLocation("2006-01-02", readingDate(time.Now().Unix(), loc), loc)
+	if err != nil {
+		return 0
+	}
 	cursor := today
 	if _, ok := idx.Days[today.Format("2006-01-02")]; !ok {
 		cursor = today.AddDate(0, 0, -1)
@@ -250,7 +255,7 @@ func (a *app) serveDay(w http.ResponseWriter, r *http.Request) {
 
 	date := strings.TrimSpace(r.URL.Query().Get("d"))
 	if _, perr := time.Parse("2006-01-02", date); perr != nil {
-		date = time.Now().In(loc).Format("2006-01-02")
+		date = readingDate(time.Now().Unix(), loc)
 	}
 	day := idx.Days[date]
 	shown, _ := time.ParseInLocation("2006-01-02", date, loc)
@@ -284,7 +289,10 @@ func (a *app) serveDay(w http.ResponseWriter, r *http.Request) {
 	// What was marked that day.
 	var marked []ReadEvent
 	for _, an := range idx.Annotations {
-		if time.Unix(an.StartTime, 0).In(loc).Format("2006-01-02") == date {
+		// THE SAME day definition the index used. Filtering annotations by calendar
+		// date while the reading is bucketed by cutoff date would put a highlight and
+		// the session it came from on different pages.
+		if readingDate(an.StartTime, loc) == date {
 			marked = append(marked, an)
 		}
 	}
