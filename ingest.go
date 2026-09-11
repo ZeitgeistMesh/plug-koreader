@@ -155,6 +155,9 @@ type ingestReply struct {
 	HighWater int64  `json:"high_water,omitempty"`
 	Device    string `json:"device"`
 	Message   string `json:"message"`
+	// RejectReason is the first error behind a non-zero Rejected, so a count is never
+	// reported on its own.
+	RejectReason string `json:"reject_reason,omitempty"`
 }
 
 // bearerToken pulls the token from the request. Two spellings because KOReader's HTTP
@@ -243,8 +246,15 @@ func (a *app) storeEvents(ctx context.Context, tk dblib.TenantKey, dev Device, e
 		}
 		ev.DeviceID = dev.ID
 		ev.ReceivedAt = nowRFC()
+		sanitizeEventText(&ev)
 		if err := a.events.Put(ctx, tk, ev.ID, &ev); err != nil {
 			out.Rejected++
+			// THE REASON TRAVELS. A bare "1184 rejected" is a number nobody can act on,
+			// and it is what hid this for a day: the device reported a count, the count
+			// looked like a rounding error, and 24 books were missing entirely.
+			if out.RejectReason == "" {
+				out.RejectReason = err.Error()
+			}
 			continue
 		}
 		out.Accepted++
@@ -255,7 +265,53 @@ func (a *app) storeEvents(ctx context.Context, tk dblib.TenantKey, dev Device, e
 	// HIGH WATER IS THIS BATCH'S MAXIMUM, and nothing wider. See the long note on
 	// ingestReply.HighWater for why a "largest stored" watermark cannot work here.
 	out.Message = fmt.Sprintf("%d new, %d already had, %d rejected", out.Accepted, out.Duplicate, out.Rejected)
+	if out.RejectReason != "" {
+		out.Message += " — " + out.RejectReason
+	}
 	return out
+}
+
+// sanitizeEventText scrubs the free text a device sends, because PostgreSQL cannot hold
+// it verbatim and refuses the whole row when it cannot.
+//
+// MEASURED 2026-09-11: a real Kobo synced 19,768 rows and 18,584 arrived. The missing
+// 1,185 belonged to exactly 24 books, and every one of those books lost ALL of its rows —
+// never some. The books were PDFs, and KOReader reads their titles straight out of the
+// PDF metadata, where they carry a trailing NUL:
+//
+//	title   = "Deep Work\x00"
+//	authors = "Cal Newport\x00"
+//
+// jsonb has no representation for \u0000, so every Put for those books failed. The loss
+// correlated perfectly — 24 of 24 missing books contained a control byte, 0 of 200 stored
+// books did — which is what turned a plausible guess into a cause.
+//
+// Scrubbed here, at the STORE boundary, rather than on the device: this is a constraint of
+// our storage, not a mistake by the client, and a second reader shipping a different
+// KOReader build would otherwise rediscover it. Tabs and newlines survive because a
+// highlight can legitimately contain them; everything else in C0, plus DEL, goes, and the
+// result is forced to valid UTF-8 so a truncated multi-byte sequence cannot refuse a row
+// either.
+func sanitizeEventText(ev *ReadEvent) {
+	for _, field := range []*string{&ev.Title, &ev.Authors, &ev.Text, &ev.Note, &ev.Chapter, &ev.Kind} {
+		*field = scrubText(*field)
+	}
+}
+
+func scrubText(s string) string {
+	if s == "" {
+		return s
+	}
+	s = strings.ToValidUTF8(s, "")
+	return strings.Map(func(r rune) rune {
+		if r == '\t' || r == '\n' || r == '\r' {
+			return r
+		}
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
