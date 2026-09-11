@@ -597,6 +597,7 @@ function ZmSync:syncNow(interactive, continuing)
         koreader_version = self:koreaderVersion(),
         stats_schema = schema,
         device_model = self:deviceName(),
+        utc_offset = self:utcOffset(),
         events = asArray(events),
     }, self:token())
 
@@ -657,6 +658,24 @@ end
 function ZmSync:deviceName()
     local Device = require("device")
     return (Device.model or "KOReader")
+end
+
+-- utcOffset is how far this device's clock is from UTC, in seconds.
+--
+-- It decides WHICH DAY the server files a page turn under, because the day a reader
+-- remembers is the one the e-reader showed them. An unconfigured Kobo runs and displays
+-- UTC and returns 0 here, which is exactly right: the server must then use UTC too, not
+-- the timezone of the account, or every late-night session moves to the next morning.
+--
+-- os.difftime between the same instant read as local and as UTC. The !*t form is UTC; the
+-- isdst flag is cleared on the UTC side so a summer offset is not counted twice.
+function ZmSync:utcOffset()
+    local now = os.time()
+    local utc = os.date("!*t", now)
+    utc.isdst = false
+    local ok, offset = pcall(function() return os.difftime(now, os.time(utc)) end)
+    if not ok or type(offset) ~= "number" then return 0 end
+    return math.floor(offset)
 end
 
 function ZmSync:koreaderVersion()

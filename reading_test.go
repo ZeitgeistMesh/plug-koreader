@@ -44,31 +44,55 @@ func TestPagesAreCountedDistinctly(t *testing.T) {
 	}
 }
 
-// TestDaysAreBucketedInTheReadersZone is the guard against the failure plug-habits has a
-// whole file about: server-local time putting every computation an hour out.
+// TestDaysAreBucketedInTheDevicesZone: the reading day is the day the READER SAW on the
+// e-reader's clock, not the day the account's timezone would make it.
 //
-// The instant is chosen to straddle the CUTOFF, not midnight. Once a reading day rolls over
-// at 04:00 the zone stops mattering around midnight — both readings of a late-night session
-// land on the previous day — and starts mattering at 04:00 instead. 03:30 UTC is 04:30 BST:
-// before the cutoff in one zone and after it in the other, which is the only shape that can
-// still tell the two apart.
-func TestDaysAreBucketedInTheReadersZone(t *testing.T) {
-	london := mustLoc(t, "Europe/London")
-	when := time.Date(2026, 6, 15, 3, 30, 0, 0, time.UTC) // 04:30 BST, same instant
-
-	inUTC := buildReadingIndex([]ReadEvent{
-		{ID: "a", Kind: KindRead, BookMD5: "b", Page: 1, StartTime: when.Unix(), Duration: 60},
+// This replaced two earlier answers here — converting to the user's zone, then a 04:00
+// cutoff to undo what that broke — and the owner's own 65-day run is what settled it. See
+// the note on readingDate.
+func TestDaysAreBucketedInTheDevicesZone(t *testing.T) {
+	// The real rows behind the report: 23:07-23:18 UTC on 11 August. The reader's Kobo
+	// runs UTC and showed "23:07 on the 11th", and that is the day they remember.
+	when := time.Date(2026, 8, 11, 23, 7, 59, 0, time.UTC)
+	idx := buildReadingIndex([]ReadEvent{
+		{ID: "a", Kind: KindRead, BookMD5: "b", Title: "Compassion in Action", Page: 312, StartTime: when.Unix(), Duration: 95},
 	}, time.UTC)
-	if _, ok := inUTC.Days["2026-06-14"]; !ok {
-		t.Errorf("03:30 UTC is before the cutoff, so it belongs to the 14th; got %v", inUTC.Dates)
+	if _, ok := idx.Days["2026-08-11"]; !ok {
+		t.Errorf("late-night reading left the day it was done on; days = %v", idx.Dates)
 	}
 
-	inLondon := buildReadingIndex([]ReadEvent{
-		{ID: "a", Kind: KindRead, BookMD5: "b", Page: 1, StartTime: when.Unix(), Duration: 60},
-	}, london)
-	if _, ok := inLondon.Days["2026-06-15"]; !ok {
-		t.Errorf("04:30 BST is after the cutoff, so it belongs to the 15th; got %v — "+
-			"the reader's zone is not being used", inLondon.Dates)
+	// A device that IS configured gets its own offset honoured rather than UTC.
+	plusTwo := time.FixedZone("device", 2*3600)
+	idxTZ := buildReadingIndex([]ReadEvent{
+		{ID: "a", Kind: KindRead, BookMD5: "b", Page: 1, StartTime: when.Unix(), Duration: 95},
+	}, plusTwo)
+	if _, ok := idxTZ.Days["2026-08-12"]; !ok {
+		t.Errorf("23:07 UTC is 01:07 the next day at +02:00, and the device's clock is "+
+			"what counts; days = %v", idxTZ.Dates)
+	}
+}
+
+// TestNoCutoffShiftsADayBackwards is the regression test for the 04:00 cutoff this file
+// used to carry.
+//
+// It was added to stop late-night reading falling into the next morning, and it did — by
+// dragging an EARLY-morning session back into the previous day. Measured against the
+// owner's account: a single session at 01:27 on 30 August became the 29th, so the calendar
+// showed reading on the one day they were certain they had read none, and a gap on the day
+// they resumed. A rule that has to lie about one day to tell the truth about another is
+// the wrong rule; the timezone was the actual fault.
+func TestNoCutoffShiftsADayBackwards(t *testing.T) {
+	early := time.Date(2026, 8, 30, 1, 27, 0, 0, time.UTC)
+	idx := buildReadingIndex([]ReadEvent{
+		{ID: "a", Kind: KindRead, BookMD5: "b", Page: 1, StartTime: early.Unix(), Duration: 60},
+	}, time.UTC)
+
+	if _, ok := idx.Days["2026-08-30"]; !ok {
+		t.Errorf("01:27 on the 30th must be the 30th; days = %v", idx.Dates)
+	}
+	if _, ok := idx.Days["2026-08-29"]; ok {
+		t.Errorf("a cutoff has crept back in: the 29th was a day with NO reading, and it "+
+			"is showing reading dragged back from the 30th")
 	}
 }
 
@@ -194,55 +218,5 @@ func TestSuspendedCardsLeaveTheQueue(t *testing.T) {
 	}
 	if _, total, _ := a.dueCards(ctx, tk, idx, "2026-09-11", 0); total != 0 {
 		t.Errorf("a suspended quote is still being offered")
-	}
-}
-
-// TestLateNightReadingBelongsToTheEveningItStarted is the regression test for a real
-// report: "On Tuesday 11 August 2026 I read Compassion in Action" — and the calendar
-// showed that Tuesday as empty.
-//
-// The rows were there and correct: 23:07–23:18 UTC on the 11th, which in BST is 00:07 on
-// the 12th. Nothing was lost and no timezone was wrong; midnight simply is not when a
-// reading day ends. Reading is the last thing people do before sleeping, so a calendar
-// that rolls over at 00:00 files the end of Tuesday evening under Wednesday and shows
-// Tuesday as a day you did not read.
-func TestLateNightReadingBelongsToTheEveningItStarted(t *testing.T) {
-	london := mustLoc(t, "Europe/London")
-	// The exact instants from the report.
-	first := time.Date(2026, 8, 11, 23, 7, 59, 0, time.UTC)
-	last := time.Date(2026, 8, 11, 23, 18, 31, 0, time.UTC)
-
-	idx := buildReadingIndex([]ReadEvent{
-		{ID: "a", Kind: KindRead, BookMD5: "b", Title: "Compassion in Action", Page: 312, StartTime: first.Unix(), Duration: 95},
-		{ID: "b", Kind: KindRead, BookMD5: "b", Title: "Compassion in Action", Page: 317, StartTime: last.Unix(), Duration: 31},
-	}, london)
-
-	if _, ok := idx.Days["2026-08-11"]; !ok {
-		t.Errorf("late-night reading did not land on the evening it started; days = %v", idx.Dates)
-	}
-	if _, ok := idx.Days["2026-08-12"]; ok {
-		t.Errorf("it was also filed under the next morning: %v", idx.Dates)
-	}
-}
-
-// TestTheCutoffStillEndsTheDay: a session AFTER the cutoff is a new reading day, or the
-// rule would just be "every day is the previous day".
-func TestTheCutoffStillEndsTheDay(t *testing.T) {
-	london := mustLoc(t, "Europe/London")
-	for _, tc := range []struct {
-		name  string
-		local time.Time
-		want  string
-	}{
-		{"just before the cutoff", time.Date(2026, 8, 12, 3, 59, 0, 0, london), "2026-08-11"},
-		{"just after the cutoff", time.Date(2026, 8, 12, 4, 1, 0, 0, london), "2026-08-12"},
-		{"mid-morning", time.Date(2026, 8, 12, 10, 0, 0, 0, london), "2026-08-12"},
-		{"late evening", time.Date(2026, 8, 12, 23, 30, 0, 0, london), "2026-08-12"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := readingDate(tc.local.Unix(), london); got != tc.want {
-				t.Errorf("%s (%s) → %s, want %s", tc.name, tc.local.Format("15:04"), got, tc.want)
-			}
-		})
 	}
 }

@@ -88,7 +88,9 @@ type ingestRequest struct {
 	KOReaderVersion string     `json:"koreader_version"`
 	StatsSchema     string     `json:"stats_schema"`
 	DeviceModel     string     `json:"device_model"`
-	Events          eventBatch `json:"events"`
+	// UTCOffset is the device's offset from UTC in seconds — see Device.UTCOffset.
+	UTCOffset int        `json:"utc_offset"`
+	Events    eventBatch `json:"events"`
 }
 
 // eventBatch is []ReadEvent that also accepts `{}` for an empty batch.
@@ -226,6 +228,10 @@ func (a *app) serveIngest(w http.ResponseWriter, r *http.Request) {
 	if v := strings.TrimSpace(req.KOReaderVersion); v != "" {
 		dev.KOReaderVersion = v
 	}
+	// The device's own offset, recorded every sync for the same reason as the schema: it
+	// can change (the owner sets a timezone, or travels) and the first symptom would be
+	// every reading day quietly moving.
+	dev.UTCOffset = req.UTCOffset
 	if v := strings.TrimSpace(req.StatsSchema); v != "" {
 		dev.StatsSchema = v
 	}

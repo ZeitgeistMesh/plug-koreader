@@ -31,34 +31,57 @@ import (
 	"xf/controller/pkg/dblib"
 )
 
-// capTimeTimezoneGet is plug-time's read-only zone capability, on its free peer seam.
-const capTimeTimezoneGet = "time.timezone.get"
-
-const (
-	userTZTTL         = 5 * time.Minute
-	userTZFailTTL     = 30 * time.Second
-	userTZTimeoutSecs = 3
-)
-
-// dayCutoffHour is when a READING DAY rolls over — 04:00, not midnight.
+// A READING DAY IS THE DEVICE'S DAY — the date the reader saw on the e-reader's own
+// clock when they turned the page.
 //
-// Reading is the thing people do last before sleeping, so midnight cuts a single session in
-// half and files the end of Tuesday evening under Wednesday. Reported against a real day:
-// 23:07–23:18 UTC on Tuesday 11 August is 00:07 BST, and the calendar showed Tuesday as a
-// day with no reading on it while the reader plainly remembered reading.
+// This replaces two wrong answers, and the second was mine.
 //
-// plug-diary made exactly this decision for exactly this reason (its DayCutoff, defaulting
-// to 03:00, where "a moment before the cutoff counts as the PREVIOUS day"), so this is the
-// mesh's existing idiom rather than a local fudge. 04:00 because a book at 03:30 is still
-// last night's reading.
+// First the server converted every timestamp into the user's zone from plug-time. Then,
+// when a late-night session landed on the following morning, a 04:00 cutoff was added to
+// push it back. Both were reasonable; the evidence says both were wrong.
 //
-// NOT a timezone workaround. The device's clock is correct UTC and the zone conversion is
-// correct; the cutoff is a separate, honest statement about what a "day of reading" means.
-const dayCutoffHour = 4
-
-// readingDate is the day an instant belongs to, in the reader's zone, honouring the cutoff.
+// MEASURED against the owner's own account of a 65-day run: "continuously since 8 July
+// every day until 29 August, when I read nothing; resumed on the 30th". Bucketed by the
+// device clock the data agrees exactly — 7 July missing, 8 July to 11 September unbroken
+// except for one day, and that day is the 29th. Under Europe/London plus the cutoff, the
+// gap moved to the 30th: a single session at 02:27 was dragged back into the 29th, which
+// inverted the one fact the reader was surest about.
+//
+// The reason is that this Kobo has NO TIMEZONE SET. It runs and displays UTC, so the
+// reader's sense of "which day did I read" is anchored to a UTC clock, whatever zone they
+// are standing in. Converting that to Europe/London does not correct an error, it invents
+// one — and the cutoff then papered over the symptom while the cause went on shifting days.
+//
+// So: the offset comes from the DEVICE, reported on every sync, defaulting to UTC. A
+// server-side guess about where the reader lives is exactly the thing that was wrong.
 func readingDate(ts int64, loc *time.Location) string {
-	return time.Unix(ts, 0).In(loc).Add(-dayCutoffHour * time.Hour).Format("2006-01-02")
+	return time.Unix(ts, 0).In(loc).Format("2006-01-02")
+}
+
+// deviceLoc is the zone the reader's own device is keeping time in.
+//
+// One offset per account rather than per event: a device's zone changes rarely, and
+// carrying it on every row to handle the case where it does would cost more than it
+// buys. Unknown (a device that has not synced since this field existed) means UTC, which
+// is what an unconfigured e-reader runs anyway.
+func (a *app) deviceLoc(ctx context.Context, tk dblib.TenantKey) *time.Location {
+	devices, err := a.devices.List(ctx, tk)
+	if err != nil {
+		return time.UTC
+	}
+	best, seen := 0, ""
+	for _, d := range devices {
+		if d.Revoked || d.UTCOffset == 0 {
+			continue
+		}
+		if d.LastSyncAt > seen {
+			best, seen = d.UTCOffset, d.LastSyncAt
+		}
+	}
+	if best == 0 {
+		return time.UTC
+	}
+	return time.FixedZone("device", best)
 }
 
 // BookDay is one book's reading on one day.
@@ -143,7 +166,7 @@ func (c *indexCache) put(tenantID string, idx *readingIndex) {
 // readingIndexFor returns the tenant's aggregate, building it if a sync has landed since
 // it was last built.
 func (a *app) readingIndexFor(ctx context.Context, caller string, tk dblib.TenantKey) (*readingIndex, error) {
-	loc := a.userLoc(ctx, caller)
+	loc := a.deviceLoc(ctx, tk)
 	if idx, ok := a.index.get(caller, loc.String()); ok {
 		return idx, nil
 	}
@@ -277,59 +300,4 @@ func (idx *readingIndex) Years() []int {
 	}
 	sort.Sort(sort.Reverse(sort.IntSlice(out)))
 	return out
-}
-
-// ---------- the caller's timezone ----------
-
-type tzEntry struct {
-	loc     *time.Location
-	expires time.Time
-}
-
-type tzCache struct {
-	mu sync.Mutex
-	m  map[string]tzEntry
-}
-
-func newTZCache() *tzCache { return &tzCache{m: map[string]tzEntry{}} }
-
-// userLoc resolves the caller's zone via plug-time, cached, and NEVER fails: every error
-// path yields UTC. Deliberately UTC and not time.Local — a dev box that silently disagrees
-// with production is how this class of bug stays invisible.
-func (a *app) userLoc(ctx context.Context, caller string) *time.Location {
-	if caller == "" || a.rt == nil {
-		return time.UTC
-	}
-	a.tz.mu.Lock()
-	e, ok := a.tz.m[caller]
-	a.tz.mu.Unlock()
-	if ok && time.Now().Before(e.expires) {
-		return e.loc
-	}
-
-	loc, ttl := time.UTC, userTZFailTTL
-	cctx, cancel := context.WithTimeout(ctx, userTZTimeoutSecs*time.Second)
-	defer cancel()
-	if ev, err := a.rt.CallPeer(cctx, a.timeJID, capTimeTimezoneGet, caller, map[string]any{}); err == nil {
-		if name := strings.TrimSpace(strFromMeta(ev.Result.Meta, "timezone", "tz")); name != "" {
-			if l, lerr := time.LoadLocation(name); lerr == nil {
-				loc, ttl = l, userTZTTL
-			}
-		}
-	}
-	a.tz.mu.Lock()
-	a.tz.m[caller] = tzEntry{loc: loc, expires: time.Now().Add(ttl)}
-	a.tz.mu.Unlock()
-	return loc
-}
-
-// strFromMeta reads the first non-empty string among several candidate keys, because a
-// peer's field name is a contract this plug does not own.
-func strFromMeta(m map[string]any, keys ...string) string {
-	for _, k := range keys {
-		if v, ok := m[k].(string); ok && strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
-		}
-	}
-	return ""
 }

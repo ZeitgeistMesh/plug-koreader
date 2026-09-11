@@ -22,7 +22,6 @@ func testApp() *app {
 		tokens:    dblib.NewFakeDocStore[TokenRef](),
 		cards:     dblib.NewFakeDocStore[Card](),
 		index:     newIndexCache(),
-		tz:        newTZCache(),
 	}
 	a.item = a.itemEntity()
 	return a

@@ -84,7 +84,7 @@ func (a *app) serveQuote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tk := tenant(caller)
-	loc := a.userLoc(r.Context(), caller)
+	loc := a.deviceLoc(r.Context(), tk)
 	idx, err := a.readingIndexFor(r.Context(), caller, tk)
 	if err != nil {
 		http.Error(w, "could not read your reading", http.StatusInternalServerError)

@@ -40,8 +40,6 @@ type app struct {
 	// of the raw rows, and a view that can go stale silently is worse than one that is
 	// recomputed when the only writer runs.
 	index   *indexCache
-	tz      *tzCache
-	timeJID string
 
 	// generated is the scaffolded Book CRUD surface, which used to be mounted at "/".
 	// serveReadingRoot falls through to it for any path the hand-written pages do not
@@ -100,8 +98,7 @@ func main() {
 
 	a := &app{items: items, webGroup: base.WebGroup,
 		devices: devices, pairCodes: pairCodes, events: events, tokens: tokens, cards: cards,
-		index: newIndexCache(), tz: newTZCache(),
-		timeJID:   plugcfg.Env("PLUG_KOREADER_TIME_JID", plugcfg.Svc("time")),
+		index: newIndexCache(),
 		publicURL: plugcfg.Env("PLUG_KOREADER_PUBLIC_URL", plugcfg.SvcURL("koreader"))}
 	a.item = a.itemEntity()
 

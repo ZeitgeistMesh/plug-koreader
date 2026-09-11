@@ -97,6 +97,17 @@ type Device struct {
 	KOReaderVersion string
 	StatsSchema     string
 	DeviceModel     string
+
+	// UTCOffset is the device's own offset from UTC, in seconds, as it reported on its
+	// last sync. It is what decides WHICH DAY a page turn belongs to: the reader's sense
+	// of "I read on Tuesday" comes from the clock on the e-reader in their hands, and on
+	// an unconfigured Kobo that clock is UTC whatever zone they are standing in. A
+	// server-side guess from the account's timezone gets this wrong by a day for anyone
+	// who reads late — see readingDate.
+	//
+	// Zero means "not reported", which is also the value an unconfigured device sends,
+	// and both resolve to UTC. That collision is deliberate: they want the same answer.
+	UTCOffset int
 }
 
 var errNoSuchCode = errors.New("that code is not valid — check it, or mint a new one")

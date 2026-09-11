@@ -34,7 +34,7 @@ func (a *app) serveReading(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tk := tenant(caller)
-	loc := a.userLoc(r.Context(), caller)
+	loc := a.deviceLoc(r.Context(), tk)
 	idx, err := a.readingIndexFor(r.Context(), caller, tk)
 	if err != nil {
 		http.Error(w, "could not read your reading", http.StatusInternalServerError)
@@ -246,7 +246,7 @@ func (a *app) serveDay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tk := tenant(caller)
-	loc := a.userLoc(r.Context(), caller)
+	loc := a.deviceLoc(r.Context(), tk)
 	idx, err := a.readingIndexFor(r.Context(), caller, tk)
 	if err != nil {
 		http.Error(w, "could not read your reading", http.StatusInternalServerError)
@@ -355,7 +355,7 @@ func (a *app) serveQuotes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tk := tenant(caller)
-	loc := a.userLoc(r.Context(), caller)
+	loc := a.deviceLoc(r.Context(), tk)
 	idx, err := a.readingIndexFor(r.Context(), caller, tk)
 	if err != nil {
 		http.Error(w, "could not read your reading", http.StatusInternalServerError)
@@ -460,7 +460,7 @@ func (a *app) serveReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tk := tenant(caller)
-	loc := a.userLoc(r.Context(), caller)
+	loc := a.deviceLoc(r.Context(), tk)
 
 	if r.Method == http.MethodPost {
 		_ = r.ParseForm()
