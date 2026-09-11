@@ -51,6 +51,12 @@ local BATCH = 500
 -- being paged behind a cursor — see collectAnnotations for why that is the right trade.
 local ANNOTATIONS_CAP = 5000
 
+-- PAGE_BUDGET caps how many pages one sync will capture. The rest go on the next sync:
+-- a reader that freezes for two minutes is a broken reader, and the work finishes either
+-- way.
+local PAGE_BUDGET = 12
+
+
 function ZmSync:init()
     self.settings = LuaSettings:open(SETTINGS_FILE)
     self.ui.menu:registerToMainMenu(self)
@@ -497,6 +503,19 @@ local function eachSidecar(root, fn)
     return seen
 end
 
+-- bookPaths maps partial_md5_checksum -> the book's file, read out of the sidecars.
+-- The sidecar carries both, which is the same join the annotations already rely on.
+local function bookPathsFrom(root)
+    local paths = {}
+    eachSidecar(root, function(t)
+        local md5 = t.partial_md5_checksum
+        if type(md5) == "string" and md5 ~= "" and type(t.doc_path) == "string" then
+            paths[md5] = t.doc_path
+        end
+    end)
+    return paths
+end
+
 -- collectAnnotations returns EVERY annotation on the device, every time.
 --
 -- No cursor, unlike the page rows. Two reasons, and they are worth stating because the
@@ -599,10 +618,6 @@ end
 -- this plugin does, and a bookmark's page does not change. The ledger below is what stops
 -- a hundred bookmarks becoming a hundred book-opens on every single sync.
 
--- PAGE_BUDGET caps how many pages one sync will capture. The rest go on the next sync:
--- a reader that freezes for two minutes after you press a button is a broken reader, and
--- the work finishes either way.
-local PAGE_BUDGET = 12
 
 -- captured is the local ledger of "md5:page" keys already sent. Kept on the DEVICE because
 -- it is a fact about work this device has done, and re-deriving it from the server would
@@ -611,19 +626,6 @@ function ZmSync:capturedPages()
     local c = self.settings:readSetting("captured_pages")
     if type(c) ~= "table" then c = {} end
     return c
-end
-
--- bookPaths maps partial_md5_checksum -> the book's file, read out of the sidecars.
--- The sidecar carries both, which is the same join the annotations already rely on.
-local function bookPathsFrom(root)
-    local paths = {}
-    eachSidecar(root, function(t)
-        local md5 = t.partial_md5_checksum
-        if type(md5) == "string" and md5 ~= "" and type(t.doc_path) == "string" then
-            paths[md5] = t.doc_path
-        end
-    end)
-    return paths
 end
 
 -- pageText extracts one page of one book as plain text.

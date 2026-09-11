@@ -132,7 +132,10 @@ type ingestReply struct {
 	OK        bool `json:"ok"`
 	Accepted  int  `json:"accepted"`
 	Duplicate int  `json:"duplicate"`
-	Rejected  int  `json:"rejected"`
+	// Updated counts annotations whose CONTENT changed under an id we already held — a
+	// note added later, or a bookmark that has just gained its captured page.
+	Updated  int `json:"updated"`
+	Rejected int `json:"rejected"`
 	// HighWater is the largest StartTime IN THIS BATCH (stored or already held). The
 	// device advances its cursor to what the SERVER acknowledged, never to what it read —
 	// an acknowledgement that never arrived must cost a resend, not a gap.
@@ -260,11 +263,28 @@ func (a *app) storeEvents(ctx context.Context, tk dblib.TenantKey, dev Device, e
 			continue
 		}
 		if existing, err := a.events.Get(ctx, tk, ev.ID); err == nil && existing != nil {
-			out.Duplicate++
 			if ev.Kind == KindRead && existing.StartTime > out.HighWater {
 				out.HighWater = existing.StartTime
 			}
-			continue
+			// A KNOWN ID IS NOT NECESSARILY UNCHANGED CONTENT.
+			//
+			// The whole annotation design rests on "re-send everything; an unchanged one
+			// is a duplicate and a changed one overwrites itself" — and the second half
+			// was never implemented. This branch skipped on id alone, so a note added to
+			// a highlight months later, or a bookmark that has just had its page captured,
+			// arrived, was recognised, and was thrown away. The device did its work and the
+			// server discarded it, reporting "already had".
+			//
+			// Reading rows are immutable, so they still short-circuit: comparing them would
+			// cost a field check on every one of twenty thousand rows for an answer that is
+			// always "same".
+			if ev.Kind == KindRead || !annotationChanged(*existing, ev) {
+				out.Duplicate++
+				continue
+			}
+			// Fall through and overwrite, preserving when we first saw it.
+			ev.ReceivedAt = existing.ReceivedAt
+			out.Updated++
 		}
 		ev.DeviceID = dev.ID
 		ev.ReceivedAt = nowRFC()
@@ -292,10 +312,25 @@ func (a *app) storeEvents(ctx context.Context, tk dblib.TenantKey, dev Device, e
 	// HIGH WATER IS THIS BATCH'S MAXIMUM, and nothing wider. See the long note on
 	// ingestReply.HighWater for why a "largest stored" watermark cannot work here.
 	out.Message = fmt.Sprintf("%d new, %d already had, %d rejected", out.Accepted, out.Duplicate, out.Rejected)
+	if out.Updated > 0 {
+		out.Message = fmt.Sprintf("%d new, %d updated, %d already had, %d rejected",
+			out.Accepted, out.Updated, out.Duplicate, out.Rejected)
+	}
 	if out.RejectReason != "" {
 		out.Message += " — " + out.RejectReason
 	}
 	return out
+}
+
+// annotationChanged reports whether the device is sending different CONTENT under an id we
+// already hold. Only the fields a reader can actually change are compared; position and
+// timestamps are part of the id or derived from it.
+func annotationChanged(existing, incoming ReadEvent) bool {
+	return scrubText(incoming.Text) != existing.Text ||
+		scrubText(incoming.Note) != existing.Note ||
+		scrubText(incoming.Chapter) != existing.Chapter ||
+		scrubText(incoming.Title) != existing.Title ||
+		incoming.Kind != existing.Kind
 }
 
 // sanitizeEventText scrubs the free text a device sends, because PostgreSQL cannot hold
