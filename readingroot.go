@@ -26,46 +26,51 @@ func (a *app) serveReadingRoot(w http.ResponseWriter, r *http.Request) {
 
 // koReadingCSS is the calendar, the stat tiles and the quote blocks.
 //
-// Every colour is a var() off the shared theme with a literal fallback, so the grid follows
-// light/dark with everything else rather than being a light-mode island — the accent ramp
-// is the theme's own accent at four opacities, which is why it stays coherent when the
-// theme changes underneath it. Spacing comes off the shared --sp-* scale (STYLEGUIDE §3);
-// the only hard numbers are the grid's cell size, which is what a year-of-days IS.
+// EVERY COLOUR IS A BARE var() OFF THE SHARED THEME, with no literal fallback. A hex
+// fallback looks like defensive programming and is the opposite: it is a second, invisible
+// palette that only appears when the theme fails to load, and it pins that half of the page
+// to light mode. dynlint holds hardcoded_hex_colour at ZERO here for exactly that reason,
+// and it caught fourteen of them in the first draft of this file.
+//
+// The accent ramp is the theme's own accent at four opacities via color-mix, so the grid
+// stays coherent when the theme changes underneath it. Spacing is the shared --sp-* scale
+// (STYLEGUIDE §3); the only hard numbers are the grid's cell size, which is what a
+// year-of-days IS.
 const koReadingCSS = `<style>
-.ko-tiles{display:flex;flex-wrap:wrap;gap:var(--sp-3,.75rem);margin:0 0 var(--sp-4,1rem)}
-.ko-tile{flex:1 1 7rem;background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);
-  border-radius:var(--radius,8px);padding:var(--sp-3,.75rem)}
+.ko-tiles{display:flex;flex-wrap:wrap;gap:var(--sp-3);margin:0 0 var(--sp-4)}
+.ko-tile{flex:1 1 7rem;background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius);padding:var(--sp-3)}
 .ko-tile-v{display:block;font-size:1.6rem;line-height:1.1;font-weight:600}
-.ko-tile-l{display:block;font-size:.8rem;color:var(--muted,#6b7280)}
+.ko-tile-l{display:block;font-size:.8rem;color:var(--muted)}
 
-.ko-calwrap{overflow-x:auto;padding-bottom:var(--sp-2,.5rem)}
+.ko-calwrap{overflow-x:auto;padding-bottom:var(--sp-2)}
 .ko-cal{display:inline-block;min-width:max-content}
 .ko-cal-months{display:grid;grid-auto-flow:column;grid-auto-columns:13px;
-  font-size:.7rem;color:var(--muted,#6b7280);margin-bottom:2px}
-.ko-cal-month{grid-row:1;white-space:nowrap}
+  font-size:.7rem;color:var(--muted);margin-bottom:2px}
+.ko-cal-month{white-space:nowrap;overflow:visible}
 .ko-cal-grid{display:grid;grid-template-rows:repeat(7,13px);grid-auto-flow:column;
   grid-auto-columns:13px;gap:2px}
 .ko-day{width:11px;height:11px;border-radius:2px;display:block;
-  background:var(--border,#e5e7eb);position:relative}
-a.ko-day:hover{outline:2px solid var(--accent,#2563eb);outline-offset:1px}
+  background:var(--border);position:relative}
+a.ko-day:hover{outline:2px solid var(--accent);outline-offset:1px}
 .ko-day-void{background:transparent}
-.ko-l0{background:var(--border,#e5e7eb)}
-.ko-l1{background:color-mix(in srgb,var(--accent,#2563eb) 25%,transparent)}
-.ko-l2{background:color-mix(in srgb,var(--accent,#2563eb) 45%,transparent)}
-.ko-l3{background:color-mix(in srgb,var(--accent,#2563eb) 70%,transparent)}
-.ko-l4{background:var(--accent,#2563eb)}
+.ko-l0{background:var(--border)}
+.ko-l1{background:color-mix(in srgb,var(--accent) 25%,transparent)}
+.ko-l2{background:color-mix(in srgb,var(--accent) 45%,transparent)}
+.ko-l3{background:color-mix(in srgb,var(--accent) 70%,transparent)}
+.ko-l4{background:var(--accent)}
 .ko-day-marked::after{content:"";position:absolute;right:1px;top:1px;width:3px;height:3px;
-  border-radius:50%;background:var(--card,#fff);box-shadow:0 0 0 1px var(--accent,#2563eb)}
-.ko-legend{display:flex;align-items:center;gap:var(--sp-2,.5rem);margin:var(--sp-2,.5rem) 0;
+  border-radius:50%;background:var(--card);box-shadow:0 0 0 1px var(--accent)}
+.ko-legend{display:flex;align-items:center;gap:var(--sp-2);margin:var(--sp-2) 0;
   font-size:.75rem;flex-wrap:wrap}
-.ko-legend-note{margin-left:var(--sp-3,.75rem)}
+.ko-legend-note{margin-left:var(--sp-3)}
 
-.ko-quote{margin:0 0 var(--sp-3,.75rem);padding:var(--sp-3,.75rem);
-  border-left:3px solid var(--accent,#2563eb);background:var(--bg-soft,rgba(0,0,0,.03));
-  border-radius:0 var(--radius,8px) var(--radius,8px) 0}
-.ko-bookmark{border-left-color:var(--muted,#6b7280)}
-.ko-quote-text{margin:0 0 var(--sp-2,.5rem);font-size:1.05rem;line-height:1.5}
-.ko-quote-note{margin:0 0 var(--sp-2,.5rem);font-style:italic;color:var(--muted,#6b7280)}
+.ko-quote{margin:0 0 var(--sp-3);padding:var(--sp-3);
+  border-left:3px solid var(--accent);background:var(--code-bg);
+  border-radius:0 var(--radius) var(--radius) 0}
+.ko-bookmark{border-left-color:var(--muted)}
+.ko-quote-text{margin:0 0 var(--sp-2);font-size:1.05rem;line-height:1.5}
+.ko-quote-note{margin:0 0 var(--sp-2);font-style:italic;color:var(--muted)}
 .ko-quote footer{font-size:.8rem}
 .ko-quote-cell{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;
   overflow:hidden;max-width:60ch}

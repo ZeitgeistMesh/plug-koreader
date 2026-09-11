@@ -160,17 +160,22 @@ func calendarGrid(idx *readingIndex, year int, loc *time.Location) template.HTML
 	var b strings.Builder
 	b.WriteString(`<div class="ko-calwrap"><div class="ko-cal">`)
 
-	// Month labels along the top, positioned by the week column each month starts in.
+	// Month labels along the top: ONE CELL PER WEEK COLUMN, carrying the month name only
+	// in the week that month begins. The obvious version sets grid-column on each label to
+	// position it — which is an inline style attribute, a construct dynlint holds down
+	// precisely because it cannot be themed or overridden. Emitting an empty cell for every
+	// other week puts the labels in the right columns by grid FLOW, with no positioning at
+	// all, and the row stays aligned with the day grid below because both use the same
+	// 13px auto-columns.
 	b.WriteString(`<div class="ko-cal-months">`)
-	week := 0
 	lastMonth := -1
 	for d := start; !d.After(end); d = d.AddDate(0, 0, 7) {
-		m := d.Month()
-		if int(m) != lastMonth && d.Year() == year {
-			fmt.Fprintf(&b, `<span class="ko-cal-month" style="grid-column:%d">%s</span>`, week+1, d.Format("Jan"))
-			lastMonth = int(m)
+		label := ""
+		if int(d.Month()) != lastMonth && d.Year() == year {
+			label = d.Format("Jan")
+			lastMonth = int(d.Month())
 		}
-		week++
+		fmt.Fprintf(&b, `<span class="ko-cal-month">%s</span>`, label)
 	}
 	b.WriteString(`</div>`)
 
