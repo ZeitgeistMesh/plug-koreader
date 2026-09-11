@@ -20,6 +20,9 @@ func testApp() *app {
 		pairCodes: dblib.NewFakeDocStore[PairCode](),
 		events:    dblib.NewFakeDocStore[ReadEvent](),
 		tokens:    dblib.NewFakeDocStore[TokenRef](),
+		cards:     dblib.NewFakeDocStore[Card](),
+		index:     newIndexCache(),
+		tz:        newTZCache(),
 	}
 	a.item = a.itemEntity()
 	return a

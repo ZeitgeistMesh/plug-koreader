@@ -33,6 +33,20 @@ type app struct {
 	pairCodes dblib.DocStore[PairCode]
 	events    dblib.DocStore[ReadEvent]
 	tokens    dblib.DocStore[TokenRef]
+	cards     dblib.DocStore[Card]
+
+	// Derived state. index caches the aggregate over events (summary.go); tz caches the
+	// caller→timezone resolve. Both are rebuilt rather than persisted — they are a view
+	// of the raw rows, and a view that can go stale silently is worse than one that is
+	// recomputed when the only writer runs.
+	index   *indexCache
+	tz      *tzCache
+	timeJID string
+
+	// generated is the scaffolded Book CRUD surface, which used to be mounted at "/".
+	// serveReadingRoot falls through to it for any path the hand-written pages do not
+	// claim. nil before the Web hook runs, which is why serveReadingRoot checks.
+	generated http.Handler
 }
 
 func main() {
@@ -79,9 +93,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("plug-koreader: token store: %v", err)
 	}
+	cards, err := dblib.NewPostgresDocStore[Card](ctx, pg, collCards)
+	if err != nil {
+		log.Fatalf("plug-koreader: card store: %v", err)
+	}
 
 	a := &app{items: items, webGroup: base.WebGroup,
-		devices: devices, pairCodes: pairCodes, events: events, tokens: tokens,
+		devices: devices, pairCodes: pairCodes, events: events, tokens: tokens, cards: cards,
+		index: newIndexCache(), tz: newTZCache(),
+		timeJID:   plugcfg.Env("PLUG_KOREADER_TIME_JID", plugcfg.Svc("time")),
 		publicURL: plugcfg.Env("PLUG_KOREADER_PUBLIC_URL", plugcfg.SvcURL("koreader"))}
 	a.item = a.itemEntity()
 
@@ -110,6 +130,10 @@ func main() {
 			mux.HandleFunc("/api/ingest", a.serveIngest)
 
 			// The human half, behind the ordinary gate.
+			mux.HandleFunc("/", a.serveReadingRoot)
+			mux.HandleFunc("/day", a.serveDay)
+			mux.HandleFunc("/quotes", a.serveQuotes)
+			mux.HandleFunc("/review", a.serveReview)
 			mux.HandleFunc("/pair", a.servePair)
 			mux.HandleFunc("/pair/delete", a.servePairDelete)
 			mux.HandleFunc("/addon", a.serveAddon)
@@ -120,7 +144,13 @@ func main() {
 			// page, add, delete, the step wizard and the window-manager entity. There
 			// is no HTML in this repository, which is why there is nothing here to
 			// style, boost or gate a second time.
-			mux.Handle("/", a.item.Handler(rt.WebAuthz(), nav("/")))
+			//
+			// It can no longer own "/" — the calendar does, because the reading is what
+			// this product is for and it was reachable from nowhere. ServeMux panics on
+			// a second registration of the same pattern, so the generated surface is
+			// held here and serveReadingRoot delegates every path except "/" to it,
+			// which keeps /book/new and the rest exactly where they were.
+			a.generated = a.item.Handler(rt.WebAuthz(), nav("/"))
 			return mux
 		},
 		BillingJID: plugcfg.Env("PLUG_KOREADER_BILLING_JID", plugcfg.Svc("billing")),
@@ -145,6 +175,9 @@ func main() {
 func nav(active string) []flowweb.NavLink {
 	links := []flowweb.NavLink{
 		{Label: "Books", URL: "/", Icon: koreaderApp.Icon},
+		{Label: "Reading", URL: "/", Icon: "fa-solid fa-calendar-days"},
+		{Label: "Quotes", URL: "/quotes", Icon: "fa-solid fa-quote-left"},
+		{Label: "Review", URL: "/review", Icon: "fa-solid fa-repeat"},
 		{Label: "Devices", URL: "/pair", Icon: "fa-solid fa-tablet-screen-button"},
 		{Label: "Plugin", URL: "/addon", Icon: "fa-solid fa-puzzle-piece"},
 	}

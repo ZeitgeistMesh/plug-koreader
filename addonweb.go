@@ -180,7 +180,7 @@ func (a *app) page(active string) flowweb.Page {
 		Brand: koreaderApp.Name, Emoji: koreaderApp.Emoji, Icon: koreaderApp.Icon,
 		IconColor: koreaderApp.IconColor,
 		CSS:       webui.AppShellCSS,
-		HeadHTML:  webui.FontAwesomeHead + webui.ListViewHead() + koSchemaCSS,
+		HeadHTML:  webui.FontAwesomeHead + webui.ListViewHead() + koSchemaCSS + koReadingCSS,
 		Nav:       nav(active),
 	}
 }

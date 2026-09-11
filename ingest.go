@@ -37,6 +37,14 @@ import (
 
 const collEvents = "koreader_events"
 
+// The event kinds. KindRead is a page-turn row from statistics.sqlite3; the other two are
+// annotations read out of a book's sidecar. Only KindRead advances the reading cursor.
+const (
+	KindRead      = "read"
+	KindHighlight = "highlight"
+	KindBookmark  = "bookmark"
+)
+
 // maxEventsPerSync bounds one request. A first sync from a device with years of history
 // is genuinely large, so the device pages through rather than being refused — but an
 // unbounded body is an unbounded allocation, and the edge caps the body anyway.
@@ -203,6 +211,14 @@ func (a *app) serveIngest(w http.ResponseWriter, r *http.Request) {
 	res := a.storeEvents(r.Context(), tk, dev, req.Events)
 	res.Device = dev.Name
 
+	// THE AGGREGATE IS NOW STALE. This is the only writer of events, so this is the only
+	// place that has to say so — which is what makes the cache in summary.go a real
+	// invariant rather than a TTL guess. Keyed on the device's OWNER, because that is what
+	// the web side caches by.
+	if a.index != nil {
+		a.index.bump(dev.Account)
+	}
+
 	// What the device told us about itself. Recorded on EVERY sync rather than once:
 	// a firmware upgrade changes the statistics schema underneath us, and the first
 	// symptom of that is a sync that silently stops finding rows.
@@ -239,7 +255,7 @@ func (a *app) storeEvents(ctx context.Context, tk dblib.TenantKey, dev Device, e
 		}
 		if existing, err := a.events.Get(ctx, tk, ev.ID); err == nil && existing != nil {
 			out.Duplicate++
-			if existing.StartTime > out.HighWater {
+			if ev.Kind == KindRead && existing.StartTime > out.HighWater {
 				out.HighWater = existing.StartTime
 			}
 			continue
@@ -258,7 +274,12 @@ func (a *app) storeEvents(ctx context.Context, tk dblib.TenantKey, dev Device, e
 			continue
 		}
 		out.Accepted++
-		if ev.StartTime > out.HighWater {
+		// ONLY READING ROWS MOVE THE CURSOR. Annotations travel in the same batch but
+		// are swept whole every sync rather than paged, so their timestamps are all over
+		// the history — a highlight made today, attached to a batch of 2020 page rows,
+		// would push the reading cursor six years forward and strand everything between.
+		// That is the same leap that cost this reader 16,000 rows, wearing a new hat.
+		if ev.Kind == KindRead && ev.StartTime > out.HighWater {
 			out.HighWater = ev.StartTime
 		}
 	}
