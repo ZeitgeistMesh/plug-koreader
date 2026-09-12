@@ -389,9 +389,10 @@ func (a *app) serveQuotes(w http.ResponseWriter, r *http.Request) {
 
 func quotesListView() webui.ListView {
 	return webui.ListView{
-		Action:            "/quotes",
-		RootID:            "lv-quotes",
-		Title:             "Quotes",
+		Action: "/quotes",
+		RootID: "lv-quotes",
+		// NO Title. The nav already says Quotes, and the heading only pushed the search
+		// box down the page — the same "one destination named twice" the nav had.
 		SearchPlaceholder: "Search your highlights…",
 		EmptyText:         "No highlight matches that.",
 		PageSizes:         []int{25, 50, 100},

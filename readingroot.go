@@ -37,6 +37,12 @@ func (a *app) serveReadingRoot(w http.ResponseWriter, r *http.Request) {
 // (STYLEGUIDE §3); the only hard numbers are the grid's cell size, which is what a
 // year-of-days IS.
 const koReadingCSS = `<style>
+/* A list that IS the page starts at the top of it. The shared component carries
+   .listview{margin:1rem 0}, which is right when a list follows prose or a form and wrong
+   when it is the first thing under the nav — there it just holds the search box away from
+   the header. Scoped to :first-child so only the leading list loses the margin, and only
+   on this plug's pages rather than every list in the mesh. */
+main > .listview:first-child{margin-top:0}
 .ko-tiles{display:flex;flex-wrap:wrap;gap:var(--sp-3);margin:0 0 var(--sp-4)}
 .ko-tile{flex:1 1 7rem;background:var(--card);border:1px solid var(--border);
   border-radius:var(--radius);padding:var(--sp-3)}
