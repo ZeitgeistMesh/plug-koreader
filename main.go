@@ -211,7 +211,7 @@ func (a *app) manifest(base plugcfg.Base) xats.Manifest {
 		// and the required scopes on each. That is what mesh.verify checks, and
 		// verify_contract_test.go asserts it here so a drift is a failing test rather
 		// than a failed release.
-		Capabilities: a.item.Capabilities(),
+		Capabilities: append(a.item.Capabilities(), pastListCapability()), // Past in Next (pastlist.go)
 		Entities:     []xats.EntityDecl{a.item.EntityDecl()},
 	}
 }
@@ -220,6 +220,9 @@ func (a *app) dispatch(ctx context.Context, node string, meta map[string]any) ma
 	tk := tenant(strings.TrimSpace(plugrun.Str(meta, "caller_user_id")))
 	if a.item.Handles(node) {
 		return a.item.Dispatch(ctx, node, tk, meta)
+	}
+	if node == capPastList {
+		return a.handlePastList(ctx, strings.TrimSpace(plugrun.Str(meta, "caller_user_id")), tk, meta)
 	}
 	// A TYPED rejection, not silence. mesh.verify probes every capability with an
 	// empty payload and treats a typed refusal as proof the path is wired; an

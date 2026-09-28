@@ -122,9 +122,12 @@ type readingIndex struct {
 	Days        map[string]*DaySummary
 	Dates       []string // sorted ascending
 	Annotations []ReadEvent
-	TotalRead   int
-	BuiltAt     time.Time
-	Zone        string
+	// Reads is every page-turn row, oldest first, so a question about a window (Past, in
+	// pastlist.go) is a binary search over the cached index rather than a fresh full scan.
+	Reads     []ReadEvent
+	TotalRead int
+	BuiltAt   time.Time
+	Zone      string
 }
 
 type indexCache struct {
@@ -221,6 +224,7 @@ func buildReadingIndex(events []ReadEvent, loc *time.Location) *readingIndex {
 		}
 
 		idx.TotalRead++
+		idx.Reads = append(idx.Reads, ev)
 		day.Seconds += ev.Duration
 		day.HourSeconds[t.Hour()] += ev.Duration
 
@@ -248,6 +252,8 @@ func buildReadingIndex(events []ReadEvent, loc *time.Location) *readingIndex {
 		idx.Dates = append(idx.Dates, day.Date)
 	}
 	sort.Strings(idx.Dates)
+
+	sort.SliceStable(idx.Reads, func(i, j int) bool { return idx.Reads[i].StartTime < idx.Reads[j].StartTime })
 
 	// Newest annotation first — the review list's natural order.
 	sort.Slice(idx.Annotations, func(i, j int) bool {
