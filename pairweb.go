@@ -122,7 +122,7 @@ func (a *app) servePair(w http.ResponseWriter, r *http.Request) {
 		webui.IconTextButton("fa-solid fa-key", "Mint a pairing code",
 			webui.BtnOpts{Kind: "primary", Type: "submit"}),
 		webui.IconTextButton("fa-solid fa-file-code", "Reading history (JSON)",
-			webui.BtnOpts{Kind: "secondary", Href: "/books.json", Attrs: `target="_blank" rel="noopener" hx-boost="false"`,
+			webui.BtnOpts{Kind: "secondary", Href: "/books.json", Attrs: ` target="_blank" rel="noopener" hx-boost="false"`,
 				Title: "Every book with its reading time, days, pages and annotation counts. No highlight text."})))
 	p.End(w)
 }
