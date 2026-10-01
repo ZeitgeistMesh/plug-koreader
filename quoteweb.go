@@ -150,7 +150,7 @@ func (a *app) serveQuote(w http.ResponseWriter, r *http.Request) {
 	// quote mean something later: a passage marked during a hard week reads differently
 	// from the same words marked on a train.
 	fmt.Fprint(w, `<dl class="ko-meta">`)
-	metaRow(w, "Book", orUntitled(shown.Title))
+	metaRow(w, "Book", displayTitle(shown.Title))
 	if strings.TrimSpace(shown.Authors) != "" {
 		metaRow(w, "Author", shown.Authors)
 	}
@@ -343,7 +343,7 @@ func bookRows(books []BookShelf, q webui.ListQuery) ([]webui.Row, int) {
 
 	rows := make([]webui.Row, 0, hi-lo)
 	for _, b := range filtered[lo:hi] {
-		title := webui.Text(orUntitled(b.Title))
+		title := webui.Text(displayTitle(b.Title))
 		// Only a book with quotes links into the reader — a link that opens an empty
 		// reader is worse than no link.
 		if b.Highlights > 0 {

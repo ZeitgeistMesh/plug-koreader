@@ -81,7 +81,7 @@ func (a *app) handlePastList(ctx context.Context, caller string, tk dblib.Tenant
 			seconds += g.seconds
 			out = append(out, activity.Item{
 				At: time.Unix(g.first, 0).UTC(), Verb: activity.Logged, Kind: "reading",
-				Title: fmt.Sprintf("Read: %s — %d %s", orUntitled(g.title), len(g.pages), plural(len(g.pages), "page")),
+				Title: fmt.Sprintf("Read: %s — %d %s", displayTitle(g.title), len(g.pages), plural(len(g.pages), "page")),
 				URL:   a.publicURL + "/day?d=" + url.QueryEscape(k.date),
 				Value: float64(DaySummary{Seconds: g.seconds}.Minutes()), Unit: "min",
 			})
@@ -100,7 +100,7 @@ func (a *app) handlePastList(ctx context.Context, caller string, tk dblib.Tenant
 				what, kind = "Bookmarked a page in ", "bookmark"
 			}
 			out = append(out, activity.Item{At: at.UTC(), Verb: activity.Logged, Kind: kind,
-				Title: what + orUntitled(an.Title), URL: a.publicURL + "/quotes"})
+				Title: what + displayTitle(an.Title), URL: a.publicURL + "/quotes"})
 		}
 		return out, nil
 	})

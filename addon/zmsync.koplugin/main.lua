@@ -423,6 +423,34 @@ local function annotationKind(text)
     return "bookmark"
 end
 
+-- bookTitle picks a title worth showing: the first of the candidates that is a real one,
+-- else the file name without its extension.
+--
+-- doc_props IS EMPTY FOR A PDF WITH NO METADATA, so annotations from such a book went up
+-- with no title at all and every quote from it showed as "Untitled"; the sidecar's
+-- `stats.title` and the file name both still have it. A placeholder author slot in a file
+-- name ("Unknown - The Slight Edge") is dropped, matching the server's displayTitle.
+local function bookTitle(candidates, file)
+    candidates = { candidates[1], candidates[2], candidates[3] }
+    if type(file) == "string" then
+        candidates[4] = ((file:match("([^/]+)$") or file):gsub("%.[^.]*$", ""))
+    end
+    for i = 1, 4 do
+        local c = candidates[i]
+        if type(c) == "string" then
+            c = c:match("^%s*(.-)%s*$")
+            if c ~= "" and c ~= "N/A" then
+                local slot, rest = c:match("^(.-)%s+%-%s+(.+)$")
+                if slot and ({ unknown = true, ["unknown author"] = true, ["n/a"] = true, anonymous = true })[slot:lower()] then
+                    return rest
+                end
+                return c
+            end
+        end
+    end
+    return ""
+end
+
 -- sidecarAnnotations flattens ONE sidecar table into a list of {kind,text,note,chapter,
 -- page,datetime} regardless of which schema it uses.
 local function sidecarAnnotations(t)
@@ -431,8 +459,15 @@ local function sidecarAnnotations(t)
     if type(t.annotations) == "table" then
         for _, a in ipairs(t.annotations) do
             if type(a) == "table" then
+                -- A HIGHLIGHT HAS A DRAWER; A BOOKMARK HAS NONE. That is KOReader's own
+                -- test, and "has text" is not: a bookmark carries an automatic label,
+                -- "in <chapter>", in `text`. Reading that as a quote sent 37 bookmarks as
+                -- highlights reading "in Untitled", and their pages were never captured.
+                -- A drawn highlight with no text (a scanned PDF) is treated as a bookmark
+                -- too, so its page is captured instead of an empty quote.
+                local kind = a.drawer and annotationKind(a.text) or "bookmark"
                 out[#out + 1] = {
-                    kind = annotationKind(a.text), text = a.text or "", note = a.note or "",
+                    kind = kind, text = kind == "highlight" and a.text or "", note = a.note or "",
                     chapter = a.chapter or "", page = a.pageno or a.page or 0,
                     datetime = a.datetime or "",
                 }
@@ -464,8 +499,12 @@ local function sidecarAnnotations(t)
                 -- A legacy bookmark row duplicates a highlight when it has `highlighted`;
                 -- the id is content-derived, so a duplicate costs nothing and dropping it
                 -- here would risk losing a note the highlight row does not carry.
+                -- The same label trap: a plain legacy bookmark's `notes` is "in <chapter>",
+                -- and only a `highlighted` one carries the highlighted text there.
+                local hl = a.highlighted or a.pos0 ~= nil
+                local kind = hl and annotationKind(a.notes or a.text) or "bookmark"
                 out[#out + 1] = {
-                    kind = annotationKind(a.notes or a.text), text = a.notes or a.text or "",
+                    kind = kind, text = kind == "highlight" and (a.notes or a.text or "") or "",
                     note = a.text or "", chapter = a.chapter or "",
                     page = tonumber(a.page) or 0, datetime = a.datetime or "",
                 }
@@ -558,6 +597,8 @@ function ZmSync:collectAnnotations()
         local bmd5 = t.partial_md5_checksum
         if type(bmd5) ~= "string" or bmd5 == "" then return end
         local props = type(t.doc_props) == "table" and t.doc_props or {}
+        local stats = type(t.stats) == "table" and t.stats or {}
+        local title = bookTitle({ props.title, stats.title }, paths[bmd5])
         for _, a in ipairs(sidecarAnnotations(t)) do
             if #events >= ANNOTATIONS_CAP then return end
             local when = annotationTime(a.datetime)
@@ -596,7 +637,7 @@ function ZmSync:collectAnnotations()
                     -- KOReader annotation carries no id of its own.
                     id = md5(bmd5 .. ":" .. a.datetime .. ":" .. tostring(a.page)),
                     kind = a.kind,
-                    bookmd5 = bmd5, title = props.title or "", authors = props.authors or "",
+                    bookmd5 = bmd5, title = title, authors = props.authors or "",
                     page = a.page, starttime = when, duration = 0,
                     text = text, note = note, chapter = a.chapter,
                 }
@@ -730,7 +771,134 @@ end
 --
 -- `continuing` marks a recursive call. It exists for the annotations: they ride the FIRST
 -- request of a chain and no other.
-function ZmSync:syncNow(interactive, continuing)
+-- openBook names the book open in the reader, if any: its md5 (the id the server keys
+-- annotations on) and a title to show. Nil in the file manager.
+--
+-- IT ALSO FLUSHES THAT BOOK'S SIDECAR. Annotations are read from the sidecar on disk, and
+-- KOReader writes it on close or on its autosave timer — so a highlight made a minute ago
+-- in the open book was not yet there to send, and the message would have vouched for a
+-- book whose newest highlight it never saw.
+function ZmSync:openBook()
+    local ui = self.ui
+    if not (ui and ui.document and ui.doc_settings) then return nil end
+    pcall(function() ui:saveSettings() end)
+    local bmd5 = ui.doc_settings:readSetting("partial_md5_checksum")
+    if type(bmd5) ~= "string" or bmd5 == "" then return nil end
+    local props = ui.doc_props or {}
+    local stats = ui.doc_settings:readSetting("stats") or {}
+    return { md5 = bmd5, title = bookTitle({ props.title, stats.title, props.display_title }, ui.document.file) }
+end
+
+-- whenText is a time the reader recognises at a glance: "today 23:12", "yesterday 23:12",
+-- or a date for anything older.
+local function whenText(t)
+    local today = os.date("*t")
+    local d = os.date("*t", t)
+    if d.year == today.year and d.yday == today.yday then
+        return T(_("today %1"), os.date("%H:%M", t))
+    end
+    local y = os.date("*t", os.time() - 86400)
+    if d.year == y.year and d.yday == y.yday then
+        return T(_("yesterday %1"), os.date("%H:%M", t))
+    end
+    return os.date("%d %b %H:%M", t)
+end
+
+local function count(n, one, many)
+    return tostring(n) .. " " .. (n == 1 and one or many)
+end
+
+-- syncMessage turns one reply into what the reader sees after pressing Sync, and a
+-- one-line form for the status menu.
+--
+-- IT ANSWERS "IS MY STUFF SAFE?", NOT "WHAT DID THIS PRESS ADD?". The device also syncs
+-- by itself every time wifi connects, so a press of Sync after a night of highlighting
+-- usually finds nothing new — and "0 new, 150 already had" read as if the highlights were
+-- lost when they had gone up hours earlier. So the message leads with the state, vouches
+-- for the open book from the SERVER'S count of it, and says when new data last arrived
+-- and by which route.
+function ZmSync:syncMessage(res, annotations, book, events, schema, captureReport)
+    local fresh = {}
+    local annNew, annUpd, readNew = res.annotations_new or 0, res.annotations_updated or 0, res.reading_new or 0
+    if res.annotations_new == nil then
+        -- A server that predates the split counts: fall back to its totals.
+        annNew, annUpd = (res.accepted or 0), (res.updated or 0)
+    end
+    if annNew > 0 then fresh[#fresh + 1] = count(annNew, _("new annotation"), _("new annotations")) end
+    if annUpd > 0 then fresh[#fresh + 1] = count(annUpd, _("annotation updated"), _("annotations updated")) end
+    if readNew > 0 then fresh[#fresh + 1] = count(readNew, _("new page read"), _("new page reads")) end
+    local rejected = res.rejected or 0
+
+    local head
+    if rejected > 0 then
+        head = T(_("Not everything was saved: %1"), res.message or "")
+    elseif #fresh > 0 then
+        head = T(_("Synced: %1."), table.concat(fresh, ", "))
+    else
+        head = _("Up to date. The server already had everything.")
+    end
+    local lines = { head }
+
+    -- One per id: a sidecar holding both annotation schemas yields twins, and the server
+    -- collapses them, so counting raw entries would never match its count.
+    local ids, books, inBook = {}, {}, 0
+    for _, a in ipairs(annotations) do
+        if not ids[a.id] then
+            ids[a.id] = true
+            books[a.bookmd5] = true
+            if book and a.bookmd5 == book.md5 then inBook = inBook + 1 end
+        end
+    end
+    local nBooks = 0
+    for _ in pairs(books) do nBooks = nBooks + 1 end
+    local nAnn = 0
+    for _ in pairs(ids) do nAnn = nAnn + 1 end
+
+    if book then
+        local r = type(res.book) == "table" and res.book or nil
+        if inBook == 0 then
+            lines[#lines + 1] = T(_("%1: no annotations yet."), book.title)
+        elseif r and (r.held or 0) >= inBook then
+            local line = T(_("%1: all %2 on the server"), book.title,
+                count(inBook, _("annotation"), _("annotations")))
+            if (r.newest_received or 0) > 0 then
+                line = line .. T(_(", newest received %1"), whenText(r.newest_received))
+            end
+            lines[#lines + 1] = line .. "."
+        elseif r then
+            lines[#lines + 1] = T(_("%1: only %2 of %3 annotations on the server."),
+                book.title, r.held or 0, inBook)
+        end
+    end
+
+    -- When new data last arrived, and how. On a press that added nothing this is the
+    -- line that explains where last night's highlights went.
+    local last = self.settings:readSetting("last_delivery")
+    if #fresh == 0 and type(last) == "table" and last.at then
+        local what = {}
+        if (last.annotations or 0) > 0 then what[#what + 1] = count(last.annotations, _("annotation"), _("annotations")) end
+        if (last.reading or 0) > 0 then what[#what + 1] = count(last.reading, _("page read"), _("page reads")) end
+        lines[#lines + 1] = T(_("Last new data: %1, %2 (%3)."), table.concat(what, ", "),
+            whenText(last.at), last.auto and _("automatic sync when wifi connected") or _("Sync button"))
+    end
+
+    if nAnn > 0 and rejected == 0 then
+        lines[#lines + 1] = T(_("Library: %1 from %2, all on the server."),
+            count(nAnn, _("annotation"), _("annotations")), count(nBooks, _("book"), _("books")))
+    end
+    if captureReport ~= "" then
+        lines[#lines + 1] = T(_("Bookmarked pages: %1"), captureReport)
+    end
+    if #events == 0 then
+        lines[#lines + 1] = T(_("Nothing sent (statistics: %1)."), schema)
+    end
+
+    local oneLine = os.date("%d %b %H:%M") .. " — " .. head
+    if res.message and rejected == 0 then oneLine = oneLine .. " (" .. res.message .. ")" end
+    return table.concat(lines, "\n\n"), oneLine
+end
+
+function ZmSync:syncNow(interactive, continuing, origin)
     if not self:isPaired() then
         if interactive then
             UIManager:show(InfoMessage:new{ text = _("Pair this device first.") })
@@ -751,9 +919,11 @@ function ZmSync:syncNow(interactive, continuing)
     -- Riding the first request costs exactly the same one copy per chain and owes nothing
     -- to how the reading backfill goes. The quotes are what the reader is waiting to see;
     -- they should not be behind seven years of page rows in the queue.
-    local annotations, sidecars, captureReport = {}, 0, ""
+    local annotations, captureReport, book = {}, "", nil
     if not continuing then
-        annotations, sidecars, captureReport = self:collectAnnotations()
+        book = self:openBook()
+        local _sidecars
+        annotations, _sidecars, captureReport = self:collectAnnotations()
         for _, a in ipairs(annotations) do
             events[#events + 1] = a
         end
@@ -768,6 +938,7 @@ function ZmSync:syncNow(interactive, continuing)
         device_model = self:deviceName(),
         utc_offset = self:utcOffset(),
         capture_report = captureReport,
+        current_book = book and book.md5 or nil,
         events = asArray(events),
     }, self:token())
 
@@ -796,34 +967,37 @@ function ZmSync:syncNow(interactive, continuing)
     if ack and ack > (tonumber(self.settings:readSetting("high_water")) or 0) then
         self.settings:saveSetting("high_water", ack)
     end
-    -- A SYNC THAT SENT NOTHING SAYS SO, and says what it found instead. The server can
-    -- only report on what it received, so "0 accepted" reads as success; the reason the
-    -- batch was empty is known HERE and nowhere else. `schema` carries it: "absent",
-    -- "no page table", "<table> (query failed)", or the table name for an honest
-    -- nothing-new.
-    local summary = res.message or _("ok")
-    if #annotations > 0 then
-        summary = T(_("%1 — %2 annotations from %3 books"), summary, #annotations, sidecars)
+    -- Remembered on every sync that brought something new, automatic ones included, so a
+    -- later press of Sync that finds nothing can say when and how it got there. A paging
+    -- chain adds up into one delivery.
+    local got = (res.annotations_new or res.accepted or 0) + (res.annotations_updated or 0) + (res.reading_new or 0)
+    if got > 0 then
+        local prev = continuing and self.settings:readSetting("last_delivery") or nil
+        if type(prev) ~= "table" then prev = {} end
+        self.settings:saveSetting("last_delivery", {
+            at = os.time(), auto = origin == "automatic",
+            annotations = (prev.annotations or 0) + (res.annotations_new or res.accepted or 0) + (res.annotations_updated or 0),
+            reading = (prev.reading or 0) + (res.reading_new or 0),
+        })
     end
-    if captureReport ~= "" then
-        summary = summary .. " — pages: " .. captureReport
+    -- The message is built only for the first request of a chain; a later page of the
+    -- backfill has no annotations and no open book to report on, and would overwrite the
+    -- status line with a less useful one.
+    if not continuing then
+        local text, oneLine = self:syncMessage(res, annotations, book, events, schema, captureReport)
+        self.settings:saveSetting("last_result", oneLine)
+        if interactive then
+            UIManager:show(InfoMessage:new{ text = text })
+        end
     end
-    if #events == 0 then
-        summary = T(_("%1 — sent 0 events (statistics: %2)"), summary, schema)
-    end
-    self.settings:saveSetting("last_result", summary)
     self.settings:flush()
-
-    if interactive then
-        UIManager:show(InfoMessage:new{ text = summary })
-    end
 
     -- More to send? Keep going. A first sync of a long history is many batches and
     -- should not need the reader to press the button once per five hundred pages.
     -- KEEP PAGING ON THE READING COUNT, not on #events — the annotations appended above
     -- would otherwise make a short final batch look full and recurse for ever.
     if #events - #annotations >= BATCH then
-        self:syncNow(false, true)
+        self:syncNow(false, true, origin)
     end
 end
 
@@ -919,7 +1093,7 @@ end
 -- sync is certain to be able to work.
 function ZmSync:onNetworkConnected()
     if self:isPaired() then
-        self:syncNow(false)
+        self:syncNow(false, false, "automatic")
     end
 end
 

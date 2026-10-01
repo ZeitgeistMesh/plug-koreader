@@ -274,7 +274,7 @@ func (a *app) serveDay(w http.ResponseWriter, r *http.Request) {
 	rows := make([]webui.TableRow, 0, len(day.Books))
 	for _, bd := range day.Books {
 		rows = append(rows, webui.TableRow{Cells: []template.HTML{
-			webui.Text(orUntitled(bd.Title)),
+			webui.Text(displayTitle(bd.Title)),
 			webui.Text(orDash(bd.Authors)),
 			webui.Text(fmt.Sprintf("%d min", maxInt(bd.Seconds/60, 1))),
 			webui.Text(fmt.Sprintf("%d", bd.Pages)),
@@ -338,7 +338,7 @@ func annotationBlock(an ReadEvent, loc *time.Location, showTime bool) template.H
 		fmt.Fprintf(&b, `<p class="ko-quote-note">%s</p>`, webui.Text(an.Note))
 	}
 	b.WriteString(`<footer class="muted">`)
-	b.WriteString(string(webui.Text(orUntitled(an.Title))))
+	b.WriteString(string(webui.Text(displayTitle(an.Title))))
 	if strings.TrimSpace(an.Chapter) != "" {
 		b.WriteString(" · " + string(webui.Text(an.Chapter)))
 	}
@@ -451,7 +451,7 @@ func quoteRows(highlights []ReadEvent, q webui.ListQuery, loc *time.Location) ([
 		rows = append(rows, webui.Row{
 			"quote": template.HTML(fmt.Sprintf(`<a class="ko-quote-cell" href="/quote?id=%s">%s</a>`,
 				url.QueryEscape(h.ID), webui.Text(h.Text))),
-			"book": webui.Text(orUntitled(h.Title)),
+			"book": webui.Text(displayTitle(h.Title)),
 			"when": webui.Text(time.Unix(h.StartTime, 0).In(loc).Format("2006-01-02")),
 		})
 	}
@@ -554,8 +554,21 @@ func (a *app) serveReview(w http.ResponseWriter, r *http.Request) {
 	p.End(w)
 }
 
-func orUntitled(s string) string {
-	if strings.TrimSpace(s) == "" {
+// displayTitle is how a book's title is shown.
+//
+// A PLACEHOLDER AUTHOR IS DROPPED. KOReader titles a PDF with no metadata from its file
+// name, and files named "Author - Title" by a library tool keep the author slot even when
+// the tool never knew it — "Unknown - The Slight Edge". Shown in a narrow column that is
+// just "Unknown". Only a placeholder is dropped: plenty of real titles contain " - ".
+func displayTitle(s string) string {
+	s = strings.TrimSpace(s)
+	if before, after, ok := strings.Cut(s, " - "); ok && strings.TrimSpace(after) != "" {
+		switch strings.ToLower(strings.TrimSpace(before)) {
+		case "unknown", "unknown author", "n/a", "anonymous":
+			s = strings.TrimSpace(after)
+		}
+	}
+	if s == "" {
 		return "Untitled"
 	}
 	return s

@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"xf/controller/pkg/dblib"
 )
@@ -95,6 +96,10 @@ type ingestRequest struct {
 	// zmsync warning has ever reached its crash.log, so a capture failing on every book
 	// was completely silent.
 	CaptureReport string     `json:"capture_report"`
+	// CurrentBook is the md5 of the book open on the device, if any. The reply carries
+	// the server's own count of that book's annotations (see bookReceipt), because the
+	// book in hand is the one the reader is checking on when they press Sync.
+	CurrentBook string `json:"current_book"`
 	Events    eventBatch `json:"events"`
 }
 
@@ -141,6 +146,15 @@ type ingestReply struct {
 	// note added later, or a bookmark that has just gained its captured page.
 	Updated  int `json:"updated"`
 	Rejected int `json:"rejected"`
+	// THE SAME COUNTS SPLIT BY KIND, for the message the reader sees. "0 new" lumps page
+	// rows and annotations together and only describes THIS request — the device also
+	// syncs on its own every time wifi connects, so a press of Sync after a night of
+	// highlighting rightly finds nothing new and reads as if the highlights were lost.
+	AnnotationsNew     int `json:"annotations_new"`
+	AnnotationsUpdated int `json:"annotations_updated"`
+	ReadingNew         int `json:"reading_new"`
+	// Book is the receipt for CurrentBook; absent when the device named none.
+	Book *bookReceipt `json:"book,omitempty"`
 	// HighWater is the largest StartTime IN THIS BATCH (stored or already held). The
 	// device advances its cursor to what the SERVER acknowledged, never to what it read —
 	// an acknowledgement that never arrived must cost a resend, not a gap.
@@ -220,6 +234,7 @@ func (a *app) serveIngest(w http.ResponseWriter, r *http.Request) {
 
 	res := a.storeEvents(r.Context(), tk, dev, req.Events)
 	res.Device = dev.Name
+	res.Book = a.receiptFor(r.Context(), tk, req.CurrentBook, req.Events)
 
 	// THE AGGREGATE IS NOW STALE. This is the only writer of events, so this is the only
 	// place that has to say so — which is what makes the cache in summary.go a real
@@ -269,6 +284,7 @@ func (a *app) storeEvents(ctx context.Context, tk dblib.TenantKey, dev Device, e
 	for i := range events {
 		ev := events[i]
 		ev.ID = strings.TrimSpace(ev.ID)
+		updated := false
 		if ev.ID == "" || strings.TrimSpace(ev.Kind) == "" {
 			// An event with no id cannot be deduplicated, so accepting it would make
 			// every resend a new row and every count wrong. Counted and dropped.
@@ -298,6 +314,8 @@ func (a *app) storeEvents(ctx context.Context, tk dblib.TenantKey, dev Device, e
 			// Fall through and overwrite, preserving when we first saw it.
 			ev.ReceivedAt = existing.ReceivedAt
 			out.Updated++
+			out.AnnotationsUpdated++
+			updated = true
 		}
 		ev.DeviceID = dev.ID
 		ev.ReceivedAt = nowRFC()
@@ -313,6 +331,14 @@ func (a *app) storeEvents(ctx context.Context, tk dblib.TenantKey, dev Device, e
 			continue
 		}
 		out.Accepted++
+		// An update falls through to here as well, so Accepted counts it twice over;
+		// the split counts do not.
+		switch {
+		case ev.Kind == KindRead:
+			out.ReadingNew++
+		case !updated:
+			out.AnnotationsNew++
+		}
 		// ONLY READING ROWS MOVE THE CURSOR. Annotations travel in the same batch but
 		// are swept whole every sync rather than paged, so their timestamps are all over
 		// the history — a highlight made today, attached to a batch of 2020 page rows,
@@ -331,6 +357,46 @@ func (a *app) storeEvents(ctx context.Context, tk dblib.TenantKey, dev Device, e
 	}
 	if out.RejectReason != "" {
 		out.Message += " — " + out.RejectReason
+	}
+	return out
+}
+
+// bookReceipt is the server's account of one book's annotations after a sync: how many of
+// those the device just offered are HELD here, read back from storage rather than inferred
+// from the counts, and when the newest of them arrived. The device compares Held with how
+// many it sent, so "all on the server" is something the server said, not something the
+// device assumed.
+type bookReceipt struct {
+	Held int `json:"held"`
+	// NewestReceived is Unix seconds, 0 when nothing is held. Seconds rather than a
+	// timestamp string because the device formats it in its own local time, and Lua has
+	// no RFC 3339 parser.
+	NewestReceived int64 `json:"newest_received"`
+}
+
+// receiptFor builds the bookReceipt for book from the annotations in this batch. Only the
+// open book's annotations are looked up — a handful of reads, not the library.
+func (a *app) receiptFor(ctx context.Context, tk dblib.TenantKey, book string, events []ReadEvent) *bookReceipt {
+	book = strings.TrimSpace(book)
+	if book == "" {
+		return nil
+	}
+	out := &bookReceipt{}
+	seen := map[string]bool{}
+	for _, ev := range events {
+		id := strings.TrimSpace(ev.ID)
+		if ev.Kind == KindRead || ev.BookMD5 != book || id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		held, err := a.events.Get(ctx, tk, id)
+		if err != nil || held == nil {
+			continue
+		}
+		out.Held++
+		if t, err := time.Parse(time.RFC3339, held.ReceivedAt); err == nil && t.Unix() > out.NewestReceived {
+			out.NewestReceived = t.Unix()
+		}
 	}
 	return out
 }
