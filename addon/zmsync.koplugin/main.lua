@@ -883,8 +883,14 @@ function ZmSync:post(path, body, token)
         headers["X-KOReader-Token"] = token
     end
 
+    -- THE SINK FORM OF http.request RETURNS 1 FIRST, NOT THE STATUS: `1, code, headers,
+    -- status` on success and `nil, err` on failure. Reading it as `code, _, status` put
+    -- the constant 1 in `code`, so the >= 400 check below never fired, and a dropped
+    -- connection's error landed in `_` and was thrown away. The empty sink then decoded
+    -- to nil WITHOUT raising, and post returned true, nil — which crashed syncNow on
+    -- `res.high_water` the first time the reader's wifi went away mid-sync.
     socketutil:set_timeout(10, 60)
-    local ok, code, _, status = pcall(function()
+    local ok, r, code, _headers, status = pcall(function()
         return http.request{
             url = url, method = "POST", headers = headers,
             source = ltn12.source.string(payload),
@@ -893,10 +899,13 @@ function ZmSync:post(path, body, token)
     end)
     socketutil:reset_timeout()
 
-    if not ok then return false, tostring(code) end
+    if not ok then return false, tostring(r) end
+    if r == nil then return false, tostring(code or "no reply") end
     local raw = table.concat(sink)
     local decoded_ok, decoded = pcall(JSON.decode, raw)
-    if not decoded_ok then
+    -- A reply that is not a JSON object (empty body, a proxy's HTML page, `null`) is a
+    -- failure, never a success the caller has to guess about.
+    if not decoded_ok or type(decoded) ~= "table" then
         return false, T("HTTP %1", tostring(code or status or "?"))
     end
     if type(code) == "number" and code >= 400 then
