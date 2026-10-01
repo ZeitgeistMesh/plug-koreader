@@ -114,13 +114,16 @@ func (a *app) servePair(w http.ResponseWriter, r *http.Request) {
 	// to a block of prose or a form, not to a list that is already a component.
 	view.Render(w, q, rows, total)
 	fmt.Fprint(w, `<p class="muted">The token is shown only by its last four characters — the rest is stored as a hash and cannot be read back, here or anywhere else.</p>`)
-	// One button, so no row container and no margin of its own: the paragraph above it
-	// already carries the house paragraph margin. The hand-tuned top margin that used to
-	// sit on this form was a literal off the shared scale, which is the drift the style
-	// guide's §3 exists to stop — and dynlint's off_scale_spacing counts.
-	fmt.Fprintf(w, `<form method="post">%s</form>`,
+	// The house ButtonRow, so the two controls get the shared gap and clearance rather than
+	// a margin of their own; dynlint's off_scale_spacing counts any hand-tuned one. The
+	// export is a link inside the form, so it never submits it. It opens in a new tab
+	// because it is a JSON document, not a page of this site with a nav to come back by.
+	fmt.Fprintf(w, `<form method="post">%s</form>`, webui.ButtonRow(
 		webui.IconTextButton("fa-solid fa-key", "Mint a pairing code",
-			webui.BtnOpts{Kind: "primary", Type: "submit"}))
+			webui.BtnOpts{Kind: "primary", Type: "submit"}),
+		webui.IconTextButton("fa-solid fa-file-code", "Reading history (JSON)",
+			webui.BtnOpts{Kind: "secondary", Href: "/books.json", Attrs: `target="_blank" rel="noopener" hx-boost="false"`,
+				Title: "Every book with its reading time, days, pages and annotation counts. No highlight text."})))
 	p.End(w)
 }
 

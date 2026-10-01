@@ -132,6 +132,7 @@ func main() {
 			mux.HandleFunc("/quotes", a.serveQuotes)
 			mux.HandleFunc("/quote", a.serveQuote)
 			mux.HandleFunc("/books", a.serveBooks)
+			mux.HandleFunc("/books.json", a.serveBooksExport)
 			mux.HandleFunc("/review", a.serveReview)
 			mux.HandleFunc("/pair", a.servePair)
 			mux.HandleFunc("/pair/delete", a.servePairDelete)
