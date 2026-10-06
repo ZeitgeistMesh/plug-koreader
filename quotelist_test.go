@@ -65,3 +65,37 @@ func TestQuoteListReturnsOneBooksTextInReadingOrder(t *testing.T) {
 		t.Fatalf("another tenant read the quotes: %+v", out)
 	}
 }
+
+// The export pages by (ReceivedAt, id): a batch stamped in one second and cut by the limit
+// must resume where it was cut, and an overwritten highlight (a later ReceivedAt) comes
+// round again so the mirror sees the change.
+func TestQuoteExportPagesByArrivalAndResumes(t *testing.T) {
+	evs := []ReadEvent{
+		{ID: "b", Kind: KindHighlight, Text: "two", ReceivedAt: "2026-10-01T10:00:00Z", StartTime: 1757000000},
+		{ID: "a", Kind: KindHighlight, Text: "one", ReceivedAt: "2026-10-01T10:00:00Z"},
+		{ID: "c", Kind: KindHighlight, Text: "three", ReceivedAt: "2026-10-01T10:00:00Z"},
+		{ID: "m", Kind: KindBookmark, ReceivedAt: "2026-10-01T10:00:00Z"},
+		{ID: "z", Kind: KindHighlight, Text: "edited", ReceivedAt: "2026-10-02T09:00:00Z"},
+	}
+	page1, next, more := quoteExport(evs, "", 2)
+	if len(page1) != 2 || page1[0].ID != "a" || page1[1].ID != "b" || !more {
+		t.Fatalf("page 1 = %+v more=%v", page1, more)
+	}
+	if page1[0].Ref != "koreader:a" || page1[1].AnnotatedAt == "" {
+		t.Errorf("an item lacks its ref or its time: %+v", page1)
+	}
+	page2, next2, more2 := quoteExport(evs, next, 2)
+	if len(page2) != 2 || page2[0].ID != "c" || page2[1].ID != "z" || more2 {
+		t.Fatalf("page 2 = %+v more=%v — the tied batch was not resumed where it was cut", page2, more2)
+	}
+	if rest, again, _ := quoteExport(evs, next2, 2); len(rest) != 0 || again != next2 {
+		t.Errorf("past the end: %d items, cursor %q", len(rest), again)
+	}
+}
+
+func TestQuoteExportIsInternal(t *testing.T) {
+	c := quoteExportCapability()
+	if !c.Internal || c.ExposeToMCP {
+		t.Error("koreader.quote.export is a feed between plugs and must stay off MCP")
+	}
+}

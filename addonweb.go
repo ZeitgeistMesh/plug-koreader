@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"xf/controller/pkg/flowweb"
+	"xf/controller/pkg/quotebrowser"
 	"xf/controller/pkg/webui"
 )
 
@@ -180,7 +181,7 @@ func (a *app) page(active string) flowweb.Page {
 		Brand: koreaderApp.Name, Emoji: koreaderApp.Emoji, Icon: koreaderApp.Icon,
 		IconColor: koreaderApp.IconColor,
 		CSS:       webui.AppShellCSS,
-		HeadHTML:  webui.FontAwesomeHead + webui.ListViewHead() + koSchemaCSS + koReadingCSS,
+		HeadHTML:  webui.FontAwesomeHead + webui.ListViewHead() + koSchemaCSS + koReadingCSS + quotebrowser.HeadHTML(),
 		Nav:       nav(active),
 	}
 }

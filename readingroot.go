@@ -24,7 +24,7 @@ func (a *app) serveReadingRoot(w http.ResponseWriter, r *http.Request) {
 	a.serveReading(w, r)
 }
 
-// koReadingCSS is the calendar, the stat tiles and the quote blocks.
+// koReadingCSS is the calendar and the stat tiles. Quotes are the shared browser's.
 //
 // EVERY COLOUR IS A BARE var() OFF THE SHARED THEME, with no literal fallback. A hex
 // fallback looks like defensive programming and is the opposite: it is a second, invisible
@@ -71,37 +71,13 @@ a.ko-day:hover{outline:2px solid var(--accent);outline-offset:1px}
   font-size:.75rem;flex-wrap:wrap}
 .ko-legend-note{margin-left:var(--sp-3)}
 
-.ko-quote{margin:0 0 var(--sp-3);padding:var(--sp-3);
-  border-left:3px solid var(--accent);background:var(--code-bg);
-  border-radius:0 var(--radius) var(--radius) 0}
-.ko-bookmark{border-left-color:var(--muted)}
-.ko-quote-text{margin:0 0 var(--sp-2);font-size:1.05rem;line-height:1.5}
-.ko-quote-note{margin:0 0 var(--sp-2);font-style:italic;color:var(--muted)}
-.ko-quote footer{font-size:.8rem}
-.ko-quote-cell{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;
-  overflow:hidden;max-width:60ch}
-.ko-review .ko-quote{font-size:1.1rem}
+/* The quote itself — its passage, the reader, the pager — is styled by the shared
+   quote browser (controller/pkg/quotebrowser), which every quote view uses. */
 .ko-grade{display:inline}
 
-/* The one-quote reader. The passage gets the measure and the size; everything else on
-   the page is metadata under it. max-width is in ch because line LENGTH is what makes
-   prose readable, and it is the one number here that is about the text rather than the
-   viewport. */
-.ko-reader .ko-quote-big{font-size:1.35rem;line-height:1.6;max-width:66ch}
-.ko-meta{display:grid;grid-template-columns:auto 1fr;gap:var(--sp-1) var(--sp-3);
-  margin:var(--sp-3) 0 0;font-size:.85rem}
-.ko-meta dt{color:var(--muted)}
-.ko-meta dd{margin:0}
-.ko-pager{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
-  gap:var(--sp-2);margin-top:var(--sp-4)}
-.ko-pager-prev{grid-column:1;justify-self:start}
-.ko-pager-count{grid-column:2;color:var(--muted);font-size:.85rem;white-space:nowrap}
-.ko-pager-next{grid-column:3;justify-self:end}
 .ko-page{margin:var(--sp-3) 0 0;border:1px solid var(--border);border-radius:var(--radius);
   padding:var(--sp-2) var(--sp-3);background:var(--card)}
 .ko-page summary{cursor:pointer;color:var(--muted);font-size:.85rem}
 .ko-page-text{margin-top:var(--sp-2);white-space:pre-wrap;line-height:1.55;max-width:66ch}
 .ko-page-wait{margin:var(--sp-2) 0 0;font-size:.85rem}
-a.ko-quote-cell{text-decoration:none}
-a.ko-quote-cell:hover{text-decoration:underline}
 </style>`

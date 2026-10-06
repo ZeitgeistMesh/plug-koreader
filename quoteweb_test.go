@@ -1,103 +1,180 @@
 package main
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
-	"xf/controller/pkg/reviewqueue"
+	"xf/controller/pkg/dblib"
+	"xf/controller/pkg/demo"
 	"xf/controller/pkg/webui"
 )
 
-func quoteFixture() *readingIndex {
+// quoteFixture stores two books' highlights, deliberately out of both page and time order,
+// plus a bookmark and a reading row that must never enter the browser.
+func quoteFixture(t *testing.T, a *app) {
+	t.Helper()
 	const base = int64(1757000000)
-	return buildReadingIndex([]ReadEvent{
-		// Two books, deliberately out of both page and time order on input.
+	tk := tenant("reader@zm.is")
+	for _, ev := range []ReadEvent{
 		{ID: "b-p9", Kind: KindHighlight, BookMD5: "bbb", Title: "Second", Page: 9, StartTime: base + 50, Text: "nine"},
 		{ID: "a-p2", Kind: KindHighlight, BookMD5: "aaa", Title: "First", Page: 2, StartTime: base + 900, Text: "two"},
 		{ID: "a-p1", Kind: KindHighlight, BookMD5: "aaa", Title: "First", Page: 1, StartTime: base + 100, Text: "one"},
 		{ID: "b-p3", Kind: KindHighlight, BookMD5: "bbb", Title: "Second", Page: 3, StartTime: base + 10, Text: "three"},
-		// A bookmark has no quote and must never enter the reader.
 		{ID: "mark", Kind: KindBookmark, BookMD5: "aaa", Title: "First", Page: 4, StartTime: base},
 		{ID: "read", Kind: KindRead, BookMD5: "aaa", Title: "First", Page: 1, StartTime: base, Duration: 300},
-	}, time.UTC)
-}
-
-// TestReaderPagesInReadingOrder: paging forward should walk a book the way it was read.
-// The flat list is newest-first because that is what searching wants; these are different
-// questions and conflating them gives a reader that jumps around mid-book.
-func TestReaderPagesInReadingOrder(t *testing.T) {
-	quotes, title := scopedHighlights(quoteFixture(), "aaa")
-	if title != "First" {
-		t.Errorf("book title = %q, want First", title)
-	}
-	var got []string
-	for _, q := range quotes {
-		got = append(got, q.ID)
-	}
-	if strings.Join(got, ",") != "a-p1,a-p2" {
-		t.Errorf("scoped order = %v, want [a-p1 a-p2] — by page, ascending", got)
-	}
-}
-
-// TestReaderScopeExcludesOtherBooksAndBookmarks.
-func TestReaderScopeExcludesOtherBooksAndBookmarks(t *testing.T) {
-	idx := quoteFixture()
-
-	scoped, _ := scopedHighlights(idx, "aaa")
-	for _, q := range scoped {
-		if q.BookMD5 != "aaa" {
-			t.Errorf("book scope leaked %q", q.ID)
-		}
-		if q.Kind != KindHighlight {
-			t.Errorf("a %s entered the reader", q.Kind)
-		}
-	}
-
-	all, _ := scopedHighlights(idx, "")
-	if len(all) != 4 {
-		t.Fatalf("unscoped reader has %d quotes, want 4 (bookmarks and read rows excluded)", len(all))
-	}
-	for _, q := range all {
-		if q.ID == "mark" || q.ID == "read" {
-			t.Errorf("%q must not be a quote", q.ID)
+	} {
+		ev := ev
+		if err := a.events.Put(context.Background(), tk, ev.ID, &ev); err != nil {
+			t.Fatal(err)
 		}
 	}
 }
 
-// TestPagerLocatesWithinTheScope pins the Prev/Next wiring: the first quote has no
-// previous, the last has no next, and the count is the scope's size — not the library's.
-func TestPagerLocatesWithinTheScope(t *testing.T) {
-	quotes, _ := scopedHighlights(quoteFixture(), "aaa")
-	ids := make([]string, 0, len(quotes))
-	for _, q := range quotes {
-		ids = append(ids, q.ID)
+// browse renders one of the shared browser's pages as mounted by this plug.
+func browse(t *testing.T, a *app, target string) string {
+	t.Helper()
+	mux := http.NewServeMux()
+	a.quoteView().Mount(mux, a.webGate, a.page)
+	r := httptest.NewRequest(http.MethodGet, target, nil)
+	r.Header.Set("Remote-Email", "reader@zm.is")
+	r.Header.Set("Remote-Groups", "plug_koreader")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("%s: HTTP %d", target, w.Code)
 	}
+	return w.Body.String()
+}
 
-	first := reviewqueue.Locate(ids, "a-p1")
-	if first.Position != 1 || first.Total != 2 || first.PrevID != "" || first.NextID != "a-p2" {
-		t.Errorf("first quote: %+v", first)
+// The corpus is the highlights and nothing else: bookmarks without a page and reading rows
+// never enter the browser.
+func TestCorpusIsTheHighlights(t *testing.T) {
+	a := testApp()
+	quoteFixture(t, a)
+	qs, err := koCorpus{a}.List(context.Background(), "reader@zm.is")
+	if err != nil {
+		t.Fatal(err)
 	}
-	last := reviewqueue.Locate(ids, "a-p2")
-	if last.Position != 2 || last.NextID != "" || last.PrevID != "a-p1" {
-		t.Errorf("last quote: %+v", last)
+	if len(qs) != 4 {
+		t.Fatalf("corpus has %d quotes, want 4 (bookmarks and read rows excluded)", len(qs))
+	}
+	for _, q := range qs {
+		if q.Ref.Source != "koreader" || q.Ref.ID == "mark" || q.Ref.ID == "read" {
+			t.Errorf("unexpected quote %v", q.Ref)
+		}
+		if q.AtHref == "" || !strings.HasPrefix(q.AtHref, "/day?d=") {
+			t.Errorf("%v does not link its reading day: %q", q.Ref, q.AtHref)
+		}
 	}
 }
 
-// TestPagerCarriesTheBookScope: the scope must survive Prev/Next, or the second page of a
-// book's quotes silently becomes the whole library.
-func TestPagerCarriesTheBookScope(t *testing.T) {
-	html := string(reviewqueue.PagerHTML(
-		reviewqueue.Queue{Position: 1, Total: 2, NextID: "a-p2"}, quotePagerOpts("aaa")))
-	if !strings.Contains(html, "book=aaa") {
-		t.Errorf("the pager link drops the book scope: %s", html)
+// TestReaderPagesABookInReadingOrder: paging forward should walk a book the way it was read,
+// and the book scope must survive Previous / Next or the second page of a book's quotes
+// silently becomes the whole library.
+func TestReaderPagesABookInReadingOrder(t *testing.T) {
+	a := testApp()
+	quoteFixture(t, a)
+	body := browse(t, a, "/quote?book=aaa")
+	if !strings.Contains(body, ">one<") || !strings.Contains(body, "1 of 2") {
+		t.Errorf("the scoped reader does not open on page 1 of the book's 2 quotes")
 	}
-	if !strings.Contains(html, "/quote?id=a-p2") {
-		t.Errorf("the pager link is not pointing at the reader: %s", html)
+	if !strings.Contains(body, `href="/quote?id=koreader%3Aa-p2&amp;book=aaa"`) {
+		t.Errorf("Next does not lead to page 2 within the book")
 	}
-	// FullNav: a real navigation, so no htmx swap attributes.
-	if strings.Contains(html, "hx-get") {
-		t.Errorf("the reader pager should be a full navigation, got an htmx swap: %s", html)
+	if !strings.Contains(body, `href="/books"`) {
+		t.Errorf("a scoped reader has no way back to the books")
+	}
+	if strings.Contains(body, "hx-get") {
+		t.Errorf("the reader pager should be a full navigation, got an htmx swap")
+	}
+}
+
+// A link from before Refs (/quote?id=<event id>) still opens its quote.
+func TestAnOldQuoteLinkStillResolves(t *testing.T) {
+	a := testApp()
+	quoteFixture(t, a)
+	body := browse(t, a, "/quote?id=b-p9")
+	if !strings.Contains(body, ">nine<") {
+		t.Errorf("/quote?id=b-p9 did not open that quote")
+	}
+}
+
+// P0 is browse-only: koreader draws no star or tag control until vision exists to hold them.
+func TestTheBrowserIsBrowseOnly(t *testing.T) {
+	a := testApp()
+	quoteFixture(t, a)
+	for _, target := range []string{"/quotes", "/quote"} {
+		if body := browse(t, a, target); strings.Contains(body, "data-qb-control") {
+			t.Errorf("%s draws a control", target)
+		}
+	}
+}
+
+// Design §3, anti-drift 3: quote markup and styling live ONLY in the shared package. A
+// ko-quote or qb- class written here would be this plug drawing a quote of its own.
+func TestNoQuoteMarkupOutsideTheSharedBrowser(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lit := regexp.MustCompile(`\bko-quote|["' .]qb-[a-z]`)
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(b), "\n") {
+			if lit.MatchString(line) {
+				t.Errorf("%s:%d draws quote markup of its own: %s", f, i+1, strings.TrimSpace(line))
+			}
+		}
+	}
+	if !lit.MatchString(`<p class="ko-quote-text">`) || !lit.MatchString(`class="qb-text"`) {
+		t.Error("the literal check no longer matches the markup it exists for")
+	}
+}
+
+// The demo browses the persona's reading: the calendar has days, the browser has quotes,
+// and a real tenant is never seeded.
+func TestDemoSeedsThePersonasReading(t *testing.T) {
+	a := testApp()
+	ctx := context.Background()
+	tk := dblib.TenantKey{Account: "demo-n1", Workspace: demo.WorkspacePrefix + "n1demo", Subject: "demo-n1demo"}
+	idx, err := a.readingIndexFor(ctx, tk.Subject, tk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(idx.Highlights()) != 8 || len(idx.Dates) < 20 {
+		t.Fatalf("demo reading: %d highlights over %d days, want 8 over 20+", len(idx.Highlights()), len(idx.Dates))
+	}
+	if streak := currentStreak(idx, time.UTC); streak < 2 {
+		t.Errorf("the demo streak is %d; the last two days are always read", streak)
+	}
+	// Idempotent: a second read writes nothing more.
+	before, _ := a.events.List(ctx, tk)
+	a.demoSeeded = sync.Map{}
+	_, _ = a.readingIndexFor(ctx, tk.Subject, tk)
+	after, _ := a.events.List(ctx, tk)
+	if len(after) != len(before) {
+		t.Errorf("a second read reseeded: %d rows became %d", len(before), len(after))
+	}
+	real := tenant("reader@zm.is")
+	if _, err := a.readingIndexFor(ctx, "reader@zm.is", real); err != nil {
+		t.Fatal(err)
+	}
+	if rows, _ := a.events.List(ctx, real); len(rows) != 0 {
+		t.Errorf("a real tenant was seeded with %d demo rows", len(rows))
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -40,6 +41,8 @@ type app struct {
 	// of the raw rows, and a view that can go stale silently is worse than one that is
 	// recomputed when the only writer runs.
 	index   *indexCache
+	// demoSeeded remembers the demo workspaces already seeded by this process (demo.go).
+	demoSeeded sync.Map
 
 	// generated is the scaffolded Book CRUD surface, which used to be mounted at "/".
 	// serveReadingRoot falls through to it for any path the hand-written pages do not
@@ -129,8 +132,9 @@ func main() {
 			// The human half, behind the ordinary gate.
 			mux.HandleFunc("/", a.serveReadingRoot)
 			mux.HandleFunc("/day", a.serveDay)
-			mux.HandleFunc("/quotes", a.serveQuotes)
-			mux.HandleFunc("/quote", a.serveQuote)
+			// /quotes, /quote and the browser's action route: the shared quote
+			// browser (quotebrowse.go), mounted rather than written here.
+			a.quoteView().Mount(mux, a.webGate, a.page)
 			mux.HandleFunc("/books", a.serveBooks)
 			mux.HandleFunc("/books.json", a.serveBooksExport)
 			mux.HandleFunc("/review", a.serveReview)
@@ -212,7 +216,7 @@ func (a *app) manifest(base plugcfg.Base) xats.Manifest {
 		// and the required scopes on each. That is what mesh.verify checks, and
 		// verify_contract_test.go asserts it here so a drift is a failing test rather
 		// than a failed release.
-		Capabilities: append(a.item.Capabilities(), pastListCapability(), quoteListCapability()), // pastlist.go, quotelist.go
+		Capabilities: append(a.item.Capabilities(), pastListCapability(), quoteListCapability(), quoteExportCapability()), // pastlist.go, quotelist.go, quoteexport.go
 		Entities:     []xats.EntityDecl{a.item.EntityDecl()},
 	}
 }
@@ -227,6 +231,9 @@ func (a *app) dispatch(ctx context.Context, node string, meta map[string]any) ma
 	}
 	if node == capQuoteList {
 		return a.handleQuoteList(ctx, strings.TrimSpace(plugrun.Str(meta, "caller_user_id")), meta)
+	}
+	if node == capQuoteExport {
+		return a.handleQuoteExport(ctx, strings.TrimSpace(plugrun.Str(meta, "caller_user_id")), meta)
 	}
 	// A TYPED rejection, not silence. mesh.verify probes every capability with an
 	// empty payload and treats a typed refusal as proof the path is wired; an

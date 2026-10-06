@@ -169,6 +169,11 @@ func (c *indexCache) put(tenantID string, idx *readingIndex) {
 // readingIndexFor returns the tenant's aggregate, building it if a sync has landed since
 // it was last built.
 func (a *app) readingIndexFor(ctx context.Context, caller string, tk dblib.TenantKey) (*readingIndex, error) {
+	// A demo workspace is seeded lazily on its first read, here, because this is the read
+	// path every reading surface shares. A no-op for a real tenant.
+	if a.ensureDemoSeed(ctx, tk) {
+		a.index.bump(caller)
+	}
 	loc := a.deviceLoc(ctx, tk)
 	if idx, ok := a.index.get(caller, loc.String()); ok {
 		return idx, nil

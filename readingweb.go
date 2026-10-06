@@ -6,7 +6,7 @@ package main
 //
 //	/          WHEN did I read — a year of days, coloured by how long
 //	/day       WHAT did I read on this day, and what did I mark
-//	/quotes    every highlight, searchable
+//	/quotes    every highlight, searchable (the shared quote browser, quotebrowse.go)
 //	/review    the spaced-repetition queue
 //
 // The calendar is a year grid rather than a month view on purpose: reading is a habit, and
@@ -17,13 +17,11 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
-	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"xf/controller/pkg/flowweb"
+	"xf/controller/pkg/quotebrowser"
 	"xf/controller/pkg/webui"
 )
 
@@ -316,146 +314,30 @@ func dayNavLine(date string) string {
 	return fmt.Sprintf("%s · %s", d.AddDate(0, 0, -1).Format("2006-01-02"), d.AddDate(0, 0, 1).Format("2006-01-02"))
 }
 
-// annotationBlock renders one quote. The TEXT IS THE POINT, so it gets the room: the book
-// and the date are secondary lines under it, not a table row that clips it.
+// annotationBlock renders one quote through the shared browser's passage, so a quote on a
+// day page looks exactly like one in the reader. The TEXT IS THE POINT, so it gets the
+// room: the book and the time are a line under it, not a table row that clips it.
 func annotationBlock(an ReadEvent, loc *time.Location, showTime bool) template.HTML {
-	var b strings.Builder
-	kind := "bookmark"
-	if an.Kind == KindHighlight {
-		kind = "highlight"
-	}
-	fmt.Fprintf(&b, `<blockquote class="ko-quote ko-%s">`, kind)
-	if strings.TrimSpace(an.Text) != "" {
-		fmt.Fprintf(&b, `<p class="ko-quote-text">%s</p>`, webui.Text(an.Text))
-	} else {
+	q := quotebrowser.Quote{Text: an.Text, Note: an.Note}
+	pending := strings.TrimSpace(an.Text) == ""
+	if pending {
 		// SAYS WHAT IS HAPPENING. "A bookmark, with no quote" described the record and
 		// not the situation: the page IS coming, the reader just has not synced enough
 		// times to have fetched it yet. A placeholder that reads like a dead end sends
 		// someone looking for a bug instead of pressing sync.
-		fmt.Fprintf(&b, `<p class="ko-quote-text muted">A bookmark — its page has not been captured yet. It arrives on a future sync.</p>`)
+		q.Text = "A bookmark — its page has not been captured yet. It arrives on a future sync."
 	}
-	if strings.TrimSpace(an.Note) != "" && strings.TrimSpace(an.Note) != strings.TrimSpace(an.Text) {
-		fmt.Fprintf(&b, `<p class="ko-quote-note">%s</p>`, webui.Text(an.Note))
-	}
-	b.WriteString(`<footer class="muted">`)
-	b.WriteString(string(webui.Text(displayTitle(an.Title))))
+	footer := displayTitle(an.Title)
 	if strings.TrimSpace(an.Chapter) != "" {
-		b.WriteString(" · " + string(webui.Text(an.Chapter)))
+		footer += " · " + an.Chapter
 	}
 	if an.Page > 0 {
-		fmt.Fprintf(&b, " · p.%d", an.Page)
+		footer += fmt.Sprintf(" · p.%d", an.Page)
 	}
 	if showTime && an.StartTime > 0 {
-		b.WriteString(" · " + time.Unix(an.StartTime, 0).In(loc).Format("15:04"))
+		footer += " · " + time.Unix(an.StartTime, 0).In(loc).Format("15:04")
 	}
-	b.WriteString(`</footer></blockquote>`)
-	return template.HTML(b.String())
-}
-
-// serveQuotes lists every highlight.
-func (a *app) serveQuotes(w http.ResponseWriter, r *http.Request) {
-	caller, ok := a.webGate(w, r)
-	if !ok {
-		return
-	}
-	tk := tenant(caller)
-	loc := a.deviceLoc(r.Context(), tk)
-	idx, err := a.readingIndexFor(r.Context(), caller, tk)
-	if err != nil {
-		http.Error(w, "could not read your reading", http.StatusInternalServerError)
-		return
-	}
-
-	view := quotesListView()
-	q := view.ParseListQuery(r)
-	rows, total := quoteRows(idx.Highlights(), q, loc)
-
-	if flowweb.WantsFragment(r) && r.Method == http.MethodGet {
-		view.RenderFragment(w, q, rows, total)
-		return
-	}
-
-	p := a.page("/quotes")
-	p.StartFor(w, r, "Quotes")
-	if len(idx.Highlights()) == 0 {
-		fmt.Fprint(w, `<div class="card"><h3>No quotes yet</h3>`)
-		fmt.Fprint(w, `<p class="muted">Highlights are read from each book's sidecar on the device. Sync from <strong>☰ → Tools → Zeitgeist reading sync → Sync now</strong> and they will appear here.</p></div>`)
-		p.End(w)
-		return
-	}
-	view.Render(w, q, rows, total)
-	p.End(w)
-}
-
-func quotesListView() webui.ListView {
-	return webui.ListView{
-		Action: "/quotes",
-		RootID: "lv-quotes",
-		// NO Title. The nav already says Quotes, and the heading only pushed the search
-		// box down the page — the same "one destination named twice" the nav had.
-		SearchPlaceholder: "Search your highlights…",
-		EmptyText:         "No highlight matches that.",
-		PageSizes:         []int{25, 50, 100},
-		Columns: []webui.Column{
-			{Key: "quote", Label: "Quote"},
-			{Key: "book", Label: "Book", Sortable: true, Priority: 1},
-			{Key: "when", Label: "Marked", Sortable: true, Priority: 2},
-		},
-	}
-}
-
-func quoteRows(highlights []ReadEvent, q webui.ListQuery, loc *time.Location) ([]webui.Row, int) {
-	needle := strings.ToLower(strings.TrimSpace(q.Search))
-	filtered := make([]ReadEvent, 0, len(highlights))
-	for _, h := range highlights {
-		if needle != "" {
-			hay := strings.ToLower(h.Text + " " + h.Note + " " + h.Title + " " + h.Authors + " " + h.Chapter)
-			if !strings.Contains(hay, needle) {
-				continue
-			}
-		}
-		filtered = append(filtered, h)
-	}
-
-	switch q.Sort {
-	case "book":
-		sort.SliceStable(filtered, func(i, j int) bool {
-			if q.Desc {
-				return strings.ToLower(filtered[i].Title) > strings.ToLower(filtered[j].Title)
-			}
-			return strings.ToLower(filtered[i].Title) < strings.ToLower(filtered[j].Title)
-		})
-	case "when":
-		sort.SliceStable(filtered, func(i, j int) bool {
-			if q.Desc {
-				return filtered[i].StartTime > filtered[j].StartTime
-			}
-			return filtered[i].StartTime < filtered[j].StartTime
-		})
-	}
-
-	total := len(filtered)
-	lo := q.Offset()
-	if lo > total {
-		lo = total
-	}
-	hi := lo + q.Limit()
-	if hi > total {
-		hi = total
-	}
-	rows := make([]webui.Row, 0, hi-lo)
-	for _, h := range filtered[lo:hi] {
-		// The cell LINKS INTO THE READER. The list is for finding a quote; reading it
-		// belongs on a page that gives it room, so every row is a way in rather than a
-		// clipped preview and a dead end.
-		rows = append(rows, webui.Row{
-			"quote": template.HTML(fmt.Sprintf(`<a class="ko-quote-cell" href="/quote?id=%s">%s</a>`,
-				url.QueryEscape(h.ID), webui.Text(h.Text))),
-			"book": webui.Text(displayTitle(h.Title)),
-			"when": webui.Text(time.Unix(h.StartTime, 0).In(loc).Format("2006-01-02")),
-		})
-	}
-	return rows, total
+	return quotebrowser.Passage(q, footer, pending)
 }
 
 // serveReview is the spaced-repetition queue.

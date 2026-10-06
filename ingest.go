@@ -243,6 +243,11 @@ func (a *app) serveIngest(w http.ResponseWriter, r *http.Request) {
 	if a.index != nil {
 		a.index.bump(dev.Account)
 	}
+	// A new or changed highlight is news to vision's mirror (quoteexport.go). Reading
+	// rows are not: they never reach a quote view.
+	if res.AnnotationsNew+res.AnnotationsUpdated > 0 {
+		a.emitAnnotationsChanged(dev.Account, tk.Workspace)
+	}
 
 	// What the device told us about itself. Recorded on EVERY sync rather than once:
 	// a firmware upgrade changes the statistics schema underneath us, and the first
