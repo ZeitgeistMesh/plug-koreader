@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,6 +16,7 @@ import (
 
 	"xf/controller/pkg/dblib"
 	"xf/controller/pkg/demo"
+	"xf/controller/pkg/quotebrowser"
 	"xf/controller/pkg/webui"
 )
 
@@ -107,14 +110,152 @@ func TestAnOldQuoteLinkStillResolves(t *testing.T) {
 	}
 }
 
-// P0 is browse-only: koreader draws no star or tag control until vision exists to hold them.
-func TestTheBrowserIsBrowseOnly(t *testing.T) {
+// fakeVision records koreader's calls and answers as vision would.
+type fakeVision struct {
+	mu    sync.Mutex
+	calls []string
+	anns  map[string]any
+	fail  error
+	hold  chan struct{} // when set, the annotations answer waits until it is closed
+}
+
+func (f *fakeVision) Call(_ context.Context, _, capability, caller string, args map[string]any) (map[string]any, error) {
+	if capability == capVisionAnnotations && f.hold != nil {
+		<-f.hold
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, capability)
+	if f.fail != nil {
+		return nil, f.fail
+	}
+	switch capability {
+	case capVisionAnnotations:
+		return map[string]any{"items": f.anns}, nil
+	case capVisionStar:
+		cp, _ := args["copy"].(map[string]any)
+		if cp["text"] == "" || cp == nil {
+			return nil, fmt.Errorf("the star carried no copy")
+		}
+		return map[string]any{"ref": "vq:new", "starred": args["on"]}, nil
+	case capVisionTagSet:
+		return map[string]any{"tags": []any{"grit"}}, nil
+	}
+	return nil, fmt.Errorf("unexpected %s", capability)
+}
+
+func (f *fakeVision) count(capability string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, c := range f.calls {
+		if c == capability {
+			n++
+		}
+	}
+	return n
+}
+
+// waitLoaded lets the background annotation fetch land.
+func waitLoaded(t *testing.T, a *app, caller string) {
+	t.Helper()
+	for i := 0; i < 200; i++ {
+		if _, ok := a.annotationsFor(caller); ok {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("the annotation fetch never landed")
+}
+
+// The page never waits on vision: with nothing cached it says the stars are loading and
+// fetches behind the page; the next load draws the real state.
+func TestStarsComeFromTheCacheNeverAWait(t *testing.T) {
 	a := testApp()
 	quoteFixture(t, a)
-	for _, target := range []string{"/quotes", "/quote"} {
-		if body := browse(t, a, target); strings.Contains(body, "data-qb-control") {
-			t.Errorf("%s draws a control", target)
+	fv := &fakeVision{anns: map[string]any{"koreader:a-p1": map[string]any{"starred": true, "tags": []any{"grit"}}},
+		hold: make(chan struct{})}
+	a.vision = fv
+	// vision has not answered yet: the page must not wait for it, and must not guess.
+	first := browse(t, a, "/quote?id=a-p1")
+	if !strings.Contains(first, "Stars and tags are loading") || strings.Contains(first, `name="action"`) {
+		t.Error("the first load drew controls whose state it could not know")
+	}
+	close(fv.hold)
+	waitLoaded(t, a, "reader@zm.is")
+	second := browse(t, a, "/quote?id=a-p1")
+	if !strings.Contains(second, "</i> Starred</button>") || !strings.Contains(second, `value="grit"`) {
+		t.Error("the cached star and tag were not drawn")
+	}
+	if fv.count(capVisionAnnotations) != 1 {
+		t.Errorf("vision was asked %d times for one person's annotations", fv.count(capVisionAnnotations))
+	}
+}
+
+// A star is vision's write, with the copy attached, and the acknowledged answer is written
+// through to the cache. A failed write says so; it never pretends.
+func TestAStarIsVisionsWriteAndWritesThrough(t *testing.T) {
+	a := testApp()
+	quoteFixture(t, a)
+	fv := &fakeVision{anns: map[string]any{}}
+	a.vision = fv
+	a.annotationsFor("reader@zm.is")
+	waitLoaded(t, a, "reader@zm.is")
+	post := func(form url.Values) *httptest.ResponseRecorder {
+		mux := http.NewServeMux()
+		a.quoteView().Mount(mux, a.webGate, a.page)
+		mux.HandleFunc("/tag", a.serveTag)
+		target := "/quotes/act"
+		if form.Get("_to") != "" {
+			target = form.Get("_to")
 		}
+		r := httptest.NewRequest(http.MethodPost, target, strings.NewReader(form.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.Header.Set("Remote-Email", "reader@zm.is")
+		r.Header.Set("Remote-Groups", "plug_koreader")
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+		return w
+	}
+	if w := post(url.Values{"action": {"star"}, "ref": {"koreader:a-p1"}, "on": {"1"}, "back": {"/quote?id=a-p1"}}); w.Code != http.StatusSeeOther {
+		t.Fatalf("star: HTTP %d %s", w.Code, w.Body.String())
+	}
+	if anns, _ := a.annotationsFor("reader@zm.is"); !anns["koreader:a-p1"].Starred {
+		t.Error("the acknowledged star was not written through to the cache")
+	}
+	// Tag from anywhere: the day page's host route.
+	if w := post(url.Values{"_to": {"/tag"}, "action": {"tag"}, "ref": {"koreader:a-p2"}, "prev": {""}, "tags": {"grit"}, "back": {"/day?d=2025-09-04"}}); w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/day?d=2025-09-04" {
+		t.Fatalf("tag: HTTP %d to %q", w.Code, w.Header().Get("Location"))
+	}
+	if anns, _ := a.annotationsFor("reader@zm.is"); strings.Join(anns["koreader:a-p2"].Tags, ",") != "grit" {
+		t.Error("the acknowledged tag was not written through")
+	}
+	fv.fail = fmt.Errorf("vision is down")
+	if w := post(url.Values{"action": {"star"}, "ref": {"koreader:b-p9"}, "on": {"1"}}); w.Code != http.StatusBadGateway {
+		t.Errorf("a failed star: HTTP %d, want 502", w.Code)
+	}
+	if anns, _ := a.annotationsFor("reader@zm.is"); anns["koreader:b-p9"].Starred {
+		t.Error("a failed star was cached as starred")
+	}
+}
+
+// Vision's event drops the cached state, so a star made in vision shows here next load.
+func TestVisionsEventDropsTheCache(t *testing.T) {
+	a := testApp()
+	a.vision = &fakeVision{anns: map[string]any{}}
+	a.annotationsFor("reader@zm.is")
+	waitLoaded(t, a, "reader@zm.is")
+	a.dropAnnotations("reader@zm.is")
+	if _, have := a.annotationsFor("reader@zm.is"); have {
+		t.Error("the dropped entry is still served")
+	}
+}
+
+// The highlight is never editable from koreader, whatever is posted.
+func TestTheHighlightIsNeverEditedFromHere(t *testing.T) {
+	a := testApp()
+	if err := (koAnnotator{a}).Edit(context.Background(), "reader@zm.is", quotebrowser.Ref{Source: "koreader", ID: "x"}, "t", ""); err == nil {
+		t.Error("koreader's annotator accepted an edit of a highlight")
 	}
 }
 

@@ -44,6 +44,12 @@ type app struct {
 	// demoSeeded remembers the demo workspaces already seeded by this process (demo.go).
 	demoSeeded sync.Map
 
+	// Stars and tags are vision's; this is the cache of vision's answer and the way to
+	// ask it (annotate.go).
+	vision  visionPeer
+	ann     *annCache
+	annOnce sync.Once
+
 	// generated is the scaffolded Book CRUD surface, which used to be mounted at "/".
 	// serveReadingRoot falls through to it for any path the hand-written pages do not
 	// claim. nil before the Web hook runs, which is why serveReadingRoot checks.
@@ -138,6 +144,7 @@ func main() {
 			mux.HandleFunc("/books", a.serveBooks)
 			mux.HandleFunc("/books.json", a.serveBooksExport)
 			mux.HandleFunc("/review", a.serveReview)
+			mux.HandleFunc("/tag", a.serveTag)
 			mux.HandleFunc("/pair", a.servePair)
 			mux.HandleFunc("/pair/delete", a.servePairDelete)
 			mux.HandleFunc("/addon", a.serveAddon)
@@ -168,7 +175,9 @@ func main() {
 		log.Fatalf("plug-koreader: %v", err)
 	}
 	a.rt = rt
+	a.vision = rtVisionPeer{a}
 	defer rt.Close()
+	a.subscribeVisionChanged()
 
 	go demo.RunCleanup(ctx, pg.DB(), time.Hour, 7*24*time.Hour, log.Printf)
 	<-ctx.Done()

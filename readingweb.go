@@ -298,8 +298,16 @@ func (a *app) serveDay(w http.ResponseWriter, r *http.Request) {
 	if len(marked) == 0 {
 		fmt.Fprint(w, `<p class="muted">Nothing highlighted or bookmarked.</p>`)
 	} else {
+		// Tag from anywhere: each highlight carries the browser's own tag field, saved
+		// to vision through /tag. Drawn only when vision's answer is known, so a field
+		// never shows an empty set that is really "not loaded yet".
+		anns, haveAnns := a.annotationsFor(caller)
 		for _, an := range marked {
 			fmt.Fprint(w, annotationBlock(an, loc, true))
+			if haveAnns && strings.TrimSpace(an.Text) != "" {
+				ref := quotebrowser.Ref{Source: sourceKoreader, ID: an.ID}
+				fmt.Fprint(w, quotebrowser.TagControl(ref, anns[ref.String()].Tags, "/tag", r.URL.RequestURI()))
+			}
 		}
 	}
 	fmt.Fprint(w, `</div>`)

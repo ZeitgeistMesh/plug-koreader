@@ -9,9 +9,10 @@ package main
 // this file holds no markup at all. It says where the rows come from — the cached reading
 // index, never a peer — and which controls exist.
 //
-// P0 is browse-only: there is no Annotator, so no star or tag control is drawn. Starring
-// and tagging arrive with vision (P1), where the stars and tags are stored; the highlight
-// itself is never written by anything but the device's own sync.
+// Star and Tag are on, and both are VISION's (annotate.go): a star makes a core memory,
+// vision's own editable copy, and the highlight here is never written by anything but the
+// device's own sync. The rows carry stars and tags from the cache of vision's answer, so
+// the page never waits on vision.
 
 import (
 	"context"
@@ -34,10 +35,15 @@ func (c koCorpus) List(ctx context.Context, caller string) ([]quotebrowser.Quote
 	if err != nil {
 		return nil, err
 	}
+	anns, _ := c.a.annotationsFor(caller)
 	hs := idx.Highlights()
 	out := make([]quotebrowser.Quote, 0, len(hs))
 	for _, h := range hs {
-		out = append(out, highlightQuote(h, loc))
+		q := highlightQuote(h, loc)
+		if an, ok := anns[q.Ref.String()]; ok {
+			q.Starred, q.Tags = an.Starred, an.Tags
+		}
+		out = append(out, q)
 	}
 	return out, nil
 }
@@ -76,7 +82,11 @@ func (a *app) quoteView() quotebrowser.Config {
 	reading := quotebrowser.ReadingOrder
 	return quotebrowser.Config{
 		ListPath: "/quotes", ReaderPath: "/quote",
-		Corpus: koCorpus{a},
+		Corpus: koCorpus{a}, Annotator: koAnnotator{a},
+		Star: true, Tag: true,
+		// When vision's answer is not known yet, the controls say so instead of drawing a
+		// state that may be wrong.
+		Unavailable: a.annotationsUnavailable,
 		// The list is newest first, because that is what a search wants; the reader pages
 		// in reading order, so paging forward walks a book the way it was read.
 		Order: quotebrowser.Newest, ReaderOrder: &reading,
