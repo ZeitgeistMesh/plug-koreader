@@ -16,7 +16,7 @@ package main
 //   - a star or tag POST calls vision and, once vision acknowledges, writes the answer
 //     through to the cache;
 //   - vision publishes xats.vision.quote.changed when a star or tag changes on its side,
-//     and the cache drops that person's entry.
+//     and that person's entry is marked stale: still drawn, refreshed behind the page.
 
 import (
 	"context"
@@ -149,11 +149,16 @@ func (a *app) loadAnnotations(caller string) {
 	e.items, e.err = items, ""
 }
 
-// dropAnnotations forgets a person's cached state, so the next page fetches it afresh.
-func (a *app) dropAnnotations(caller string) {
+// staleAnnotations marks a person's cached state as out of date. It is NOT forgotten: the
+// next page still draws it while a refresh runs behind that page. Forgetting it made the
+// page after your own star say "loading" — vision's event for that star arrives right
+// after the write-through it would have thrown away.
+func (a *app) staleAnnotations(caller string) {
 	c := a.annCacheFor()
 	c.mu.Lock()
-	delete(c.m, caller)
+	if e := c.m[caller]; e != nil && !e.loading {
+		e.at = time.Time{}
+	}
 	c.mu.Unlock()
 }
 
@@ -188,7 +193,8 @@ func (a *app) annotationsUnavailable(_ context.Context, caller string) string {
 	return "Stars and tags are loading — reload in a moment."
 }
 
-// subscribeVisionChanged drops a person's cache when vision says their stars or tags moved.
+// subscribeVisionChanged marks a person's cache stale when vision says their stars or tags
+// moved, so the next page refreshes it behind itself.
 func (a *app) subscribeVisionChanged() {
 	if a.rt == nil || a.rt.Conn() == nil {
 		return
@@ -198,7 +204,7 @@ func (a *app) subscribeVisionChanged() {
 			Subject string `json:"subject"`
 		}
 		if json.Unmarshal(m.Data, &ev) == nil && ev.Subject != "" {
-			a.dropAnnotations(ev.Subject)
+			a.staleAnnotations(ev.Subject)
 		}
 	})
 	if err != nil {

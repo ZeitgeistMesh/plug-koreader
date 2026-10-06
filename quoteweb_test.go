@@ -239,16 +239,28 @@ func TestAStarIsVisionsWriteAndWritesThrough(t *testing.T) {
 	}
 }
 
-// Vision's event drops the cached state, so a star made in vision shows here next load.
-func TestVisionsEventDropsTheCache(t *testing.T) {
+// Vision's event marks the cache stale: the next page still draws what is known (never
+// "loading" right after your own star) and a refresh brings vision's latest behind it.
+func TestVisionsEventRefreshesBehindThePage(t *testing.T) {
 	a := testApp()
-	a.vision = &fakeVision{anns: map[string]any{}}
+	fv := &fakeVision{anns: map[string]any{"koreader:x": map[string]any{"starred": true}}}
+	a.vision = fv
 	a.annotationsFor("reader@zm.is")
 	waitLoaded(t, a, "reader@zm.is")
-	a.dropAnnotations("reader@zm.is")
-	if _, have := a.annotationsFor("reader@zm.is"); have {
-		t.Error("the dropped entry is still served")
+	fv.mu.Lock()
+	fv.anns = map[string]any{"koreader:x": map[string]any{"starred": true}, "koreader:y": map[string]any{"starred": true}}
+	fv.mu.Unlock()
+	a.staleAnnotations("reader@zm.is")
+	if anns, have := a.annotationsFor("reader@zm.is"); !have || !anns["koreader:x"].Starred {
+		t.Fatal("a stale entry was not served while it refreshed")
 	}
+	for i := 0; i < 200; i++ {
+		if anns, _ := a.annotationsFor("reader@zm.is"); anns["koreader:y"].Starred {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Error("the refresh after vision's event never brought the new star")
 }
 
 // The highlight is never editable from koreader, whatever is posted.
