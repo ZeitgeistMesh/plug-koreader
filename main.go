@@ -170,6 +170,10 @@ func main() {
 		// on cross-plug fan-out, so the demo runs the REAL code against isolated
 		// storage rather than a mock of it.
 		WorkspaceResolverWrap: demo.WorkspaceResolver,
+		// vision's demo pulls its mirror of the demo visitor's highlights from here, as
+		// that visitor; DemoReadable admits only a well-formed demo subject, whose
+		// workspace is its own demo:<nonce> (memory demo-readable-vs-freeuiaffordance).
+		DemoReadable: func(node string) bool { return node == capQuoteExport },
 	})
 	if err != nil {
 		log.Fatalf("plug-koreader: %v", err)
