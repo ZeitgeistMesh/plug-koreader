@@ -271,6 +271,23 @@ func TestTheHighlightIsNeverEditedFromHere(t *testing.T) {
 	}
 }
 
+// The day page's quotes and the list's book names lead into the per-book reader
+// (feedback 2cdd6c43, d3c929e9); the stat tiles use a house radius token (d9e112f4).
+func TestQuotesLeadIntoTheirBooksReader(t *testing.T) {
+	an := ReadEvent{ID: "a-p1", Kind: KindHighlight, BookMD5: "aaa", Title: "First", Page: 1, StartTime: 1757000100, Text: "one"}
+	if got := string(annotationBlock(an, time.UTC, true)); !strings.Contains(got, `href="/quote?id=koreader%3Aa-p1&amp;book=aaa"`) {
+		t.Errorf("the day page's quote does not open its book's reader: %s", got)
+	}
+	a := testApp()
+	quoteFixture(t, a)
+	if body := browse(t, a, "/quotes"); !strings.Contains(body, `href="/quote?book=aaa"`) {
+		t.Error("the list's book name is not a link to that book's quotes")
+	}
+	if strings.Contains(koReadingCSS, "var(--radius)") {
+		t.Error("var(--radius) is not a house token; it computes to 0 (square corners)")
+	}
+}
+
 // Design §3, anti-drift 3: quote markup and styling live ONLY in the shared package. A
 // ko-quote or qb- class written here would be this plug drawing a quote of its own.
 func TestNoQuoteMarkupOutsideTheSharedBrowser(t *testing.T) {

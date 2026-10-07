@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -345,7 +346,13 @@ func annotationBlock(an ReadEvent, loc *time.Location, showTime bool) template.H
 	if showTime && an.StartTime > 0 {
 		footer += " · " + time.Unix(an.StartTime, 0).In(loc).Format("15:04")
 	}
-	return quotebrowser.Passage(q, footer, pending)
+	if pending {
+		return quotebrowser.Passage(q, footer, pending)
+	}
+	// The source line opens THIS quote in its book's reader, which walks that book's
+	// quotes in reading order with nothing truncated (owner feedback d3c929e9).
+	href := "/quote?id=" + url.QueryEscape(sourceKoreader+":"+an.ID) + "&book=" + url.QueryEscape(an.BookMD5)
+	return quotebrowser.PassageLinked(q, footer, href, pending)
 }
 
 // serveReview is the spaced-repetition queue.
