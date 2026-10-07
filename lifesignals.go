@@ -21,23 +21,11 @@ import (
 	"sort"
 	"time"
 
+	"xf/controller/pkg/lifegoal"
 	"xf/controller/pkg/xats"
 )
 
 const capLifeGoalsList = "life.goals.list"
-
-// lifeSignal is one reading for a life bucket — the lifegoal.Signal wire shape (design §6).
-type lifeSignal struct {
-	Source   string `json:"source"`
-	Key      string `json:"key"`
-	Bucket   string `json:"bucket"`
-	Title    string `json:"title"`
-	Value    string `json:"value"`
-	Tone     string `json:"tone"`
-	Since    string `json:"since,omitempty"`
-	Note     string `json:"note,omitempty"`
-	DeepLink string `json:"deep_link,omitempty"`
-}
 
 func lifeGoalsCapability() xats.Capability {
 	return xats.Capability{
@@ -64,7 +52,7 @@ func (a *app) handleLifeGoals(ctx context.Context, caller string) map[string]any
 }
 
 // readingSignals is the pure computation, so it is tested without a store.
-func readingSignals(idx *readingIndex, loc *time.Location, now time.Time, publicURL string) []lifeSignal {
+func readingSignals(idx *readingIndex, loc *time.Location, now time.Time, publicURL string) []lifegoal.Signal {
 	today := now.In(loc)
 	day := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, loc)
 	// Weeks start on Monday, the reader's week as the calendar draws it.
@@ -94,15 +82,15 @@ func readingSignals(idx *readingIndex, loc *time.Location, now time.Time, public
 	}
 	sort.Ints(past)
 	median := (past[1] + past[2]) / 2
-	tone, note := "neutral", ""
+	tone, note := lifegoal.ToneNeutral, ""
 	if thisSecs > median && thisSecs > 0 {
-		tone, note = "good", "Ahead of your usual week."
+		tone, note = lifegoal.ToneGood, "Ahead of your usual week."
 	}
 	value := "Nothing yet this week"
 	if thisSecs > 0 {
 		value = fmt.Sprintf("%s · %d %s", hoursMinutes(thisSecs), thisBooks, plural(thisBooks, "book"))
 	}
-	week := lifeSignal{Source: "koreader", Key: "reading_week", Bucket: "knowledge", Title: "Reading this week",
+	week := lifegoal.Signal{Source: "koreader", Key: "reading_week", Bucket: "knowledge", Title: "Reading this week",
 		Value: value, Tone: tone, Note: note, Since: monday.Format(time.RFC3339), DeepLink: publicURL + "/"}
 
 	cutoff := now.AddDate(0, 0, -30).Unix()
@@ -112,10 +100,10 @@ func readingSignals(idx *readingIndex, loc *time.Location, now time.Time, public
 			quotes++
 		}
 	}
-	month := lifeSignal{Source: "koreader", Key: "quotes_month", Bucket: "knowledge", Title: "Highlights, last 30 days",
-		Value: fmt.Sprintf("%d %s", quotes, plural(quotes, "highlight")), Tone: "neutral",
+	month := lifegoal.Signal{Source: "koreader", Key: "quotes_month", Bucket: "knowledge", Title: "Highlights, last 30 days",
+		Value: fmt.Sprintf("%d %s", quotes, plural(quotes, "highlight")), Tone: lifegoal.ToneNeutral,
 		Since: now.AddDate(0, 0, -30).In(loc).Format(time.RFC3339), DeepLink: publicURL + "/quotes"}
-	return []lifeSignal{week, month}
+	return []lifegoal.Signal{week, month}
 }
 
 // hoursMinutes is "4 h 20 min", or "35 min" under an hour.
