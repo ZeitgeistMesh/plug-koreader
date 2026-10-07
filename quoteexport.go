@@ -149,3 +149,54 @@ func (a *app) emitAnnotationsChanged(subject, workspace string) {
 	}
 	_ = a.rt.Conn().Publish(SubjectAnnotationsChanged, payload)
 }
+
+// koreader.cards.export: the review state this plug used to keep, for vision's ONE-SHOT import
+// (design §1.4). Spaced repetition moved to vision; koreader_cards is read here, never
+// written, and goes away one release after vision's /review is verified on prod.
+const capCardsExport = "koreader.cards.export"
+
+func cardsExportCapability() xats.Capability {
+	return xats.Capability{
+		Name: capCardsExport, Command: capCardsExport, Title: "Export Review Cards",
+		Description:    "The spaced-repetition state this app kept per highlight, with the highlight, for vision's one-time import.",
+		RequiredScopes: []string{scopeUser},
+		Internal:       true,
+		Annotations:    map[string]any{"readOnlyHint": true},
+		InputSchema:    map[string]any{"type": "object", "properties": map[string]any{}},
+	}
+}
+
+func (a *app) handleCardsExport(ctx context.Context, caller string) map[string]any {
+	if caller == "" {
+		return map[string]any{"error": "not signed in", "body": "not signed in"}
+	}
+	tk := tenant(caller)
+	cards, err := a.cards.List(ctx, tk)
+	if err != nil {
+		return map[string]any{"error": "could not read your review cards", "body": "could not read your review cards"}
+	}
+	idx, err := a.readingIndexFor(ctx, caller, tk)
+	if err != nil {
+		return map[string]any{"error": "could not read your reading", "body": "could not read your reading"}
+	}
+	byID := map[string]ReadEvent{}
+	for _, h := range idx.Highlights() {
+		byID[h.ID] = h
+	}
+	out := []map[string]any{}
+	for _, c := range cards {
+		h, ok := byID[c.ID]
+		if !ok {
+			continue // a card whose highlight is gone has nothing to copy
+		}
+		item := map[string]any{"ref": sourceKoreader + ":" + h.ID, "book_md5": h.BookMD5, "title": h.Title, "authors": h.Authors,
+			"chapter": h.Chapter, "page": h.Page, "text": h.Text, "note": h.Note,
+			"card": map[string]any{"ease": c.Ease, "interval": c.Interval, "reps": c.Reps, "lapses": c.Lapses,
+				"due_on": c.DueOn, "last_review": c.LastReview, "suspended": c.Suspended}}
+		if h.StartTime > 0 {
+			item["annotated_at"] = time.Unix(h.StartTime, 0).UTC().Format(time.RFC3339)
+		}
+		out = append(out, item)
+	}
+	return map[string]any{"cards": out, "count": len(out), "body": ""}
+}

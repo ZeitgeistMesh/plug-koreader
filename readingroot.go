@@ -81,8 +81,6 @@ a.ko-day:hover{outline:2px solid var(--accent);outline-offset:1px}
 
 /* The quote itself — its passage, the reader, the pager — is styled by the shared
    quote browser (controller/pkg/quotebrowser), which every quote view uses. */
-.ko-grade{display:inline}
-
 .ko-page{margin:var(--sp-3) 0 0;border:1px solid var(--border);border-radius:var(--r-card);
   padding:var(--sp-2) var(--sp-3);background:var(--card)}
 .ko-page summary{cursor:pointer;color:var(--muted);font-size:.85rem}

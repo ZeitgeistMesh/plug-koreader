@@ -417,3 +417,42 @@ func TestHumanDurationPrefersHours(t *testing.T) {
 		}
 	}
 }
+
+// Review moved to vision: /review redirects there (a POST is a 303, never replayed), and the
+// nav's Review entry points there too.
+func TestReviewMovedToVision(t *testing.T) {
+	a := testApp()
+	for method, want := range map[string]int{http.MethodGet: http.StatusFound, http.MethodPost: http.StatusSeeOther} {
+		r := httptest.NewRequest(method, "/review", nil)
+		r.Header.Set("Remote-Email", "reader@zm.is")
+		r.Header.Set("Remote-Groups", "plug_koreader")
+		w := httptest.NewRecorder()
+		a.serveReviewMoved(w, r)
+		if w.Code != want || !strings.HasSuffix(w.Header().Get("Location"), "/review") || !strings.Contains(w.Header().Get("Location"), "vision") {
+			t.Errorf("%s /review: HTTP %d to %q", method, w.Code, w.Header().Get("Location"))
+		}
+	}
+	for _, l := range nav("/") {
+		if l.Label == "Review" && !strings.Contains(l.URL, "vision") {
+			t.Errorf("the nav's Review still points at koreader: %s", l.URL)
+		}
+	}
+}
+
+func TestCardsExportReadsTheOldReviewState(t *testing.T) {
+	a := testApp()
+	quoteFixture(t, a)
+	tk := tenant("reader@zm.is")
+	c := Card{ID: "a-p1", Ease: 2.5, Interval: 6, Reps: 2, DueOn: "2026-10-12"}
+	_ = a.cards.Put(context.Background(), tk, c.ID, &c)
+	gone := Card{ID: "no-such-highlight", Reps: 1}
+	_ = a.cards.Put(context.Background(), tk, gone.ID, &gone)
+	res := a.handleCardsExport(context.Background(), "reader@zm.is")
+	cards, _ := res["cards"].([]map[string]any)
+	if len(cards) != 1 || cards[0]["ref"] != "koreader:a-p1" || cards[0]["text"] != "one" {
+		t.Fatalf("cards.export: %v", res)
+	}
+	if !cardsExportCapability().Internal {
+		t.Error("koreader.cards.export must be Internal")
+	}
+}

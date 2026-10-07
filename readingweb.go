@@ -7,7 +7,7 @@ package main
 //	/          WHEN did I read — a year of days, coloured by how long
 //	/day       WHAT did I read on this day, and what did I mark
 //	/quotes    every highlight, searchable (the shared quote browser, quotebrowse.go)
-//	/review    the spaced-repetition queue
+//	/review    moved: a redirect to vision's review, which reviews starred memories
 //
 // The calendar is a year grid rather than a month view on purpose: reading is a habit, and
 // a habit is a shape you only see at a year's scale. A month shows you twenty rectangles
@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"xf/controller/pkg/plugcfg"
 	"xf/controller/pkg/quotebrowser"
 	"xf/controller/pkg/webui"
 )
@@ -355,100 +356,24 @@ func annotationBlock(an ReadEvent, loc *time.Location, showTime bool) template.H
 	return quotebrowser.PassageLinked(q, footer, href, pending)
 }
 
-// serveReview is the spaced-repetition queue.
-func (a *app) serveReview(w http.ResponseWriter, r *http.Request) {
-	caller, ok := a.webGate(w, r)
-	if !ok {
+// serveReviewMoved sends /review to vision's review (design §1.4): spaced repetition moved
+// there, over starred memories only. A GET keeps its query; a POST (an old open tab's grade
+// button) gets a 303 to the page and is never replayed — the grade was koreader's, which no
+// longer keeps review state.
+func (a *app) serveReviewMoved(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.webGate(w, r); !ok {
 		return
 	}
-	tk := tenant(caller)
-	loc := a.deviceLoc(r.Context(), tk)
-
-	if r.Method == http.MethodPost {
-		_ = r.ParseForm()
-		id := strings.TrimSpace(r.FormValue("id"))
-		switch r.FormValue("action") {
-		case "suspend":
-			_ = a.suspendCard(r.Context(), tk, id, loc)
-		default:
-			_ = a.recordReview(r.Context(), tk, id, Grade(r.FormValue("grade")), loc)
-		}
-		// POST-redirect-GET: a refresh after grading must not re-grade.
-		http.Redirect(w, r, "/review", http.StatusSeeOther)
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Redirect(w, r, visionReviewURL(), http.StatusSeeOther)
 		return
 	}
+	http.Redirect(w, r, visionReviewURL(), http.StatusFound)
+}
 
-	idx, err := a.readingIndexFor(r.Context(), caller, tk)
-	if err != nil {
-		http.Error(w, "could not read your reading", http.StatusInternalServerError)
-		return
-	}
-	today := time.Now().In(loc).Format("2006-01-02")
-	due, total, err := a.dueCards(r.Context(), tk, idx, today, 1)
-	if err != nil {
-		http.Error(w, "could not read your review queue", http.StatusInternalServerError)
-		return
-	}
-
-	p := a.page("/review")
-	p.StartFor(w, r, "Review")
-
-	if len(idx.Highlights()) == 0 {
-		fmt.Fprint(w, `<div class="card"><h3>Nothing to review</h3>`)
-		fmt.Fprint(w, `<p class="muted">Review works from your highlights, and none have synced yet. See <a href="/quotes">Quotes</a>.</p></div>`)
-		p.End(w)
-		return
-	}
-	if len(due) == 0 {
-		fmt.Fprint(w, `<div class="card"><h3>Done for today</h3>`)
-		fmt.Fprintf(w, `<p class="muted">Nothing is due. You have %d quotes in rotation — the next one comes back when it is time.</p>`, len(idx.Highlights()))
-		fmt.Fprint(w, `<p class="muted"><a href="/quotes">Browse them all</a> in the meantime.</p></div>`)
-		p.End(w)
-		return
-	}
-
-	card := due[0]
-	fmt.Fprintf(w, `<p class="muted">%d due today</p>`, total)
-	fmt.Fprint(w, `<div class="card ko-review">`)
-	fmt.Fprint(w, annotationBlock(card.Highlight, loc, false))
-
-	// The grades. A form per button rather than one form with four submits, because the
-	// stacked mobile layout puts them on separate lines and a shared form would need
-	// name/value pairs that read as identical to a screen reader.
-	fmt.Fprint(w, `<div class="field-row btn-row">`)
-	for _, g := range []struct {
-		grade Grade
-		label string
-		kind  string
-	}{
-		{GradeForgot, "Forgot", "danger"},
-		{GradeHard, "Hard", "secondary"},
-		{GradeGood, "Good", "primary"},
-		{GradeEasy, "Easy", "secondary"},
-	} {
-		fmt.Fprintf(w, `<form method="post" class="ko-grade"><input type="hidden" name="id" value="%s"><input type="hidden" name="grade" value="%s">%s</form>`,
-			template.HTMLEscapeString(card.Card.ID), template.HTMLEscapeString(string(g.grade)),
-			webui.IconTextButton("", g.label, webui.BtnOpts{Kind: g.kind, Type: "submit"}))
-	}
-	fmt.Fprint(w, `</div>`)
-
-	// ITS OWN .field-row.btn-row. Emitted bare, this form had no .btn-row and therefore
-	// none of the top margin that supplies a control row's clearance, so the button sat
-	// against the grade row's edge. The gap belongs to the container (STYLEGUIDE §3) —
-	// which means a second row of controls needs a second container, not a bare element
-	// after the first one.
-	fmt.Fprintf(w, `<div class="field-row btn-row"><form method="post"><input type="hidden" name="id" value="%s"><input type="hidden" name="action" value="suspend">%s</form></div>`,
-		template.HTMLEscapeString(card.Card.ID),
-		webui.IconTextButton("fa-solid fa-ban", "Never show this again",
-			webui.BtnOpts{Kind: "secondary", Size: "sm", Type: "submit"}))
-
-	if card.New {
-		fmt.Fprint(w, `<p class="muted">New quote.</p>`)
-	} else {
-		fmt.Fprintf(w, `<p class="muted">Seen %d times, due since %s.</p>`, card.Card.Reps, webui.Text(card.Card.DueOn))
-	}
-	fmt.Fprint(w, `</div>`)
-	p.End(w)
+// visionReviewURL is vision's review on this box (vision.d.zm.is on staging).
+func visionReviewURL() string {
+	return strings.TrimRight(plugcfg.Env("PLUG_KOREADER_VISION_URL", plugcfg.SvcURL("vision")), "/") + "/review"
 }
 
 // displayTitle is how a book's title is shown.

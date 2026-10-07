@@ -143,7 +143,8 @@ func main() {
 			a.quoteView().Mount(mux, a.webGate, a.page)
 			mux.HandleFunc("/books", a.serveBooks)
 			mux.HandleFunc("/books.json", a.serveBooksExport)
-			mux.HandleFunc("/review", a.serveReview)
+			// Review moved to vision (design §1.4): the same session, starred memories only.
+			mux.HandleFunc("/review", a.serveReviewMoved)
 			mux.HandleFunc("/tag", a.serveTag)
 			mux.HandleFunc("/pair", a.servePair)
 			mux.HandleFunc("/pair/delete", a.servePairDelete)
@@ -197,7 +198,8 @@ func nav(active string) []flowweb.NavLink {
 		{Label: "Reading", URL: "/", Icon: "fa-solid fa-calendar-days"},
 		{Label: "Books", URL: "/books", Icon: "fa-solid fa-book"},
 		{Label: "Quotes", URL: "/quotes", Icon: "fa-solid fa-quote-left"},
-		{Label: "Review", URL: "/review", Icon: "fa-solid fa-repeat"},
+		// Review lives in vision now; the entry stays where the reader expects it.
+		{Label: "Review", URL: visionReviewURL(), Icon: "fa-solid fa-repeat"},
 		{Label: "Devices", URL: "/pair", Icon: "fa-solid fa-tablet-screen-button"},
 		{Label: "Plugin", URL: "/addon", Icon: "fa-solid fa-puzzle-piece"},
 	}
@@ -229,7 +231,7 @@ func (a *app) manifest(base plugcfg.Base) xats.Manifest {
 		// and the required scopes on each. That is what mesh.verify checks, and
 		// verify_contract_test.go asserts it here so a drift is a failing test rather
 		// than a failed release.
-		Capabilities: append(a.item.Capabilities(), pastListCapability(), quoteListCapability(), quoteExportCapability()), // pastlist.go, quotelist.go, quoteexport.go
+		Capabilities: append(a.item.Capabilities(), pastListCapability(), quoteListCapability(), quoteExportCapability(), cardsExportCapability()), // pastlist.go, quotelist.go, quoteexport.go
 		Entities:     []xats.EntityDecl{a.item.EntityDecl()},
 	}
 }
@@ -244,6 +246,9 @@ func (a *app) dispatch(ctx context.Context, node string, meta map[string]any) ma
 	}
 	if node == capQuoteList {
 		return a.handleQuoteList(ctx, strings.TrimSpace(plugrun.Str(meta, "caller_user_id")), meta)
+	}
+	if node == capCardsExport {
+		return a.handleCardsExport(ctx, strings.TrimSpace(plugrun.Str(meta, "caller_user_id")))
 	}
 	if node == capQuoteExport {
 		return a.handleQuoteExport(ctx, strings.TrimSpace(plugrun.Str(meta, "caller_user_id")), meta)
