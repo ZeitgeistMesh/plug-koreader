@@ -40,7 +40,10 @@ func TestManifestContract(t *testing.T) {
 		t.Fatal("manifest has no capabilities — plugrun would register no command handlers")
 	}
 	for _, c := range m.Capabilities {
-		if !strings.HasPrefix(c.Name, "koreader.") {
+		// life.goals.list is the one shared node outside the namespace: life's contract,
+		// answered under the same name by every plug that feeds a life bucket (dose, habits,
+		// time, cash), and Internal so no resolver ever sees two of it.
+		if !strings.HasPrefix(c.Name, "koreader.") && !(c.Name == capLifeGoalsList && c.Internal) {
 			t.Errorf("capability %q is outside this plug's namespace", c.Name)
 		}
 		if strings.TrimSpace(c.Title) == "" || strings.TrimSpace(c.Description) == "" {

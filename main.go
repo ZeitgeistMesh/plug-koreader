@@ -174,7 +174,7 @@ func main() {
 		// vision's demo pulls its mirror of the demo visitor's highlights from here, as
 		// that visitor; DemoReadable admits only a well-formed demo subject, whose
 		// workspace is its own demo:<nonce> (memory demo-readable-vs-freeuiaffordance).
-		DemoReadable: func(node string) bool { return node == capQuoteExport },
+		DemoReadable: func(node string) bool { return node == capQuoteExport || node == capLifeGoalsList },
 	})
 	if err != nil {
 		log.Fatalf("plug-koreader: %v", err)
@@ -231,7 +231,7 @@ func (a *app) manifest(base plugcfg.Base) xats.Manifest {
 		// and the required scopes on each. That is what mesh.verify checks, and
 		// verify_contract_test.go asserts it here so a drift is a failing test rather
 		// than a failed release.
-		Capabilities: append(a.item.Capabilities(), pastListCapability(), quoteListCapability(), quoteExportCapability(), cardsExportCapability()), // pastlist.go, quotelist.go, quoteexport.go
+		Capabilities: append(a.item.Capabilities(), pastListCapability(), quoteListCapability(), quoteExportCapability(), cardsExportCapability(), lifeGoalsCapability()), // pastlist.go, quotelist.go, quoteexport.go
 		Entities:     []xats.EntityDecl{a.item.EntityDecl()},
 	}
 }
@@ -246,6 +246,9 @@ func (a *app) dispatch(ctx context.Context, node string, meta map[string]any) ma
 	}
 	if node == capQuoteList {
 		return a.handleQuoteList(ctx, strings.TrimSpace(plugrun.Str(meta, "caller_user_id")), meta)
+	}
+	if node == capLifeGoalsList {
+		return a.handleLifeGoals(ctx, strings.TrimSpace(plugrun.Str(meta, "caller_user_id")))
 	}
 	if node == capCardsExport {
 		return a.handleCardsExport(ctx, strings.TrimSpace(plugrun.Str(meta, "caller_user_id")))

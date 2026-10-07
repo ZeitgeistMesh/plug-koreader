@@ -456,3 +456,42 @@ func TestCardsExportReadsTheOldReviewState(t *testing.T) {
 		t.Error("koreader.cards.export must be Internal")
 	}
 }
+
+// koreader's knowledge signals: this week's reading against the trailing four-week median,
+// and highlights in the last 30 days. Measures, not goals.
+func TestReadingSignals(t *testing.T) {
+	loc := time.UTC
+	now := time.Date(2026, 10, 8, 20, 0, 0, 0, loc) // a Thursday
+	day := func(y int, m time.Month, d, h int) int64 { return time.Date(y, m, d, h, 0, 0, 0, loc).Unix() }
+	var evs []ReadEvent
+	add := func(id string, at int64, secs int, book string) {
+		evs = append(evs, ReadEvent{ID: id, Kind: KindRead, BookMD5: book, Title: book, Page: 1, StartTime: at, Duration: secs})
+	}
+	// Four past weeks of 30 min each; this week 2 h across two books.
+	for w := 1; w <= 4; w++ {
+		add(fmt.Sprintf("p%d", w), now.AddDate(0, 0, -7*w).Unix(), 1800, "old")
+	}
+	add("t1", day(2026, 10, 6, 21), 3600, "a")
+	add("t2", day(2026, 10, 7, 21), 3600, "b")
+	evs = append(evs, ReadEvent{ID: "h1", Kind: KindHighlight, BookMD5: "a", Title: "a", StartTime: day(2026, 10, 7, 21), Text: "x"},
+		ReadEvent{ID: "h2", Kind: KindHighlight, BookMD5: "a", Title: "a", StartTime: day(2026, 8, 1, 21), Text: "too old"})
+	sigs := readingSignals(buildReadingIndex(evs, loc), loc, now, "https://koreader.zm.is")
+	if len(sigs) != 2 {
+		t.Fatalf("signals: %+v", sigs)
+	}
+	w, m := sigs[0], sigs[1]
+	if w.Key != "reading_week" || w.Bucket != "knowledge" || w.Value != "2 h · 2 books" || w.Tone != "good" {
+		t.Errorf("reading_week: %+v", w)
+	}
+	if m.Key != "quotes_month" || m.Value != "1 highlight" {
+		t.Errorf("quotes_month: %+v", m)
+	}
+	// A quiet week is neutral, never "bad": koreader does not scold.
+	quiet := readingSignals(buildReadingIndex(evs[:4], loc), loc, now, "")
+	if quiet[0].Tone != "neutral" || quiet[0].Value != "Nothing yet this week" {
+		t.Errorf("a quiet week: %+v", quiet[0])
+	}
+	if !lifeGoalsCapability().Internal {
+		t.Error("life.goals.list must be Internal")
+	}
+}
