@@ -288,6 +288,21 @@ func TestQuotesLeadIntoTheirBooksReader(t *testing.T) {
 	}
 }
 
+// The month labels and the day grid must step by the same pitch, or the labels drift a
+// month by the end of the year (reading in early October showed under "Nov").
+func TestCalendarMonthLabelsShareTheGridsPitch(t *testing.T) {
+	months := regexp.MustCompile(`\.ko-cal-months\{[^}]*\}`).FindString(koReadingCSS)
+	grid := regexp.MustCompile(`\.ko-cal-grid\{[^}]*\}`).FindString(koReadingCSS)
+	for _, rule := range []string{months, grid} {
+		if !strings.Contains(rule, "grid-auto-columns:13px") {
+			t.Fatalf("expected 13px columns in %q", rule)
+		}
+	}
+	if !strings.Contains(grid, "gap:2px") || !strings.Contains(months, "column-gap:2px") {
+		t.Errorf("the label row and the day grid step by different pitches:\n%s\n%s", months, grid)
+	}
+}
+
 // Design §3, anti-drift 3: quote markup and styling live ONLY in the shared package. A
 // ko-quote or qb- class written here would be this plug drawing a quote of its own.
 func TestNoQuoteMarkupOutsideTheSharedBrowser(t *testing.T) {

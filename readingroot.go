@@ -56,7 +56,10 @@ main > .listview:first-child{margin-top:0}
 
 .ko-calwrap{overflow-x:auto;padding-bottom:var(--sp-2)}
 .ko-cal{display:inline-block;min-width:max-content}
-.ko-cal-months{display:grid;grid-auto-flow:column;grid-auto-columns:13px;
+/* The label row's column pitch MUST equal the day grid's: 13px columns AND the same 2px
+   gap. Without the gap the labels drifted 2px left per week, about a month by October, so
+   reading done in early October sat under "Nov". */
+.ko-cal-months{display:grid;grid-auto-flow:column;grid-auto-columns:13px;column-gap:2px;
   font-size:.7rem;color:var(--muted);margin-bottom:2px}
 .ko-cal-month{white-space:nowrap;overflow:visible}
 .ko-cal-grid{display:grid;grid-template-rows:repeat(7,13px);grid-auto-flow:column;
