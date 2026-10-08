@@ -95,8 +95,10 @@ func TestReaderPagesABookInReadingOrder(t *testing.T) {
 	if !strings.Contains(body, `href="/books"`) {
 		t.Errorf("a scoped reader has no way back to the books")
 	}
-	if strings.Contains(body, "hx-get") {
-		t.Errorf("the reader pager should be a full navigation, got an htmx swap")
+	// The pager is the org/plan/life pager: on top, swapping the reader in place
+	// (feedback 8a104b18).
+	if !strings.Contains(body, `hx-target="#qb-root"`) {
+		t.Errorf("the reader pager should be an htmx swap")
 	}
 }
 
