@@ -14,6 +14,7 @@ package main
 // and tells you nothing about whether you are keeping it up.
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -22,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"xf/controller/pkg/dblib"
 	"xf/controller/pkg/plugcfg"
 	"xf/controller/pkg/quotebrowser"
 	"xf/controller/pkg/webui"
@@ -70,34 +72,42 @@ func (a *app) serveReading(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprint(w, a.readingTotals(idx, loc))
+	fmt.Fprint(w, a.readingTotals(idx, loc, a.lastSyncAt(r.Context(), tk)))
 	fmt.Fprint(w, yearNav(years, year))
 	fmt.Fprint(w, calendarGrid(idx, year, loc))
 	p.End(w)
 }
 
 // readingTotals is the headline strip: the numbers that say the pipeline works.
-func (a *app) readingTotals(idx *readingIndex, loc *time.Location) template.HTML {
+func (a *app) readingTotals(idx *readingIndex, loc *time.Location, lastSync time.Time) template.HTML {
 	var seconds, pages int
 	for _, d := range idx.Days {
 		seconds += d.Seconds
 		pages += d.Pages
 	}
 	highlights := len(idx.Highlights())
-	streak := currentStreak(idx, loc)
+	streak := streakAsOf(idx, loc, time.Now(), lastSync)
+	streakValue := fmt.Sprintf("%d", streak.Shown)
+	if streak.Optimistic {
+		streakValue += "*"
+	}
 
-	tiles := []struct{ label, value string }{
-		{"Days read", fmt.Sprintf("%d", len(idx.Dates))},
-		{"Hours", fmt.Sprintf("%.0f", float64(seconds)/3600)},
-		{"Pages", fmt.Sprintf("%d", pages)},
-		{"Highlights", fmt.Sprintf("%d", highlights)},
-		{"Current streak", fmt.Sprintf("%d", streak)},
+	tiles := []struct{ label, value, note string }{
+		{"Days read", fmt.Sprintf("%d", len(idx.Dates)), ""},
+		{"Hours", fmt.Sprintf("%.0f", float64(seconds)/3600), ""},
+		{"Pages", fmt.Sprintf("%d", pages), ""},
+		{"Highlights", fmt.Sprintf("%d", highlights), ""},
+		{"Current streak", streakValue, streakNote(streak)},
 	}
 	var b strings.Builder
 	b.WriteString(`<div class="ko-tiles">`)
 	for _, t := range tiles {
-		fmt.Fprintf(&b, `<div class="ko-tile"><span class="ko-tile-v">%s</span><span class="ko-tile-l">%s</span></div>`,
-			webui.Text(t.value), webui.Text(t.label))
+		note := ""
+		if t.note != "" {
+			note = fmt.Sprintf(`<span class="ko-tile-n">%s</span>`, webui.Text(t.note))
+		}
+		fmt.Fprintf(&b, `<div class="ko-tile"><span class="ko-tile-v">%s</span><span class="ko-tile-l">%s</span>%s</div>`,
+			webui.Text(t.value), webui.Text(t.label), note)
 	}
 	b.WriteString(`</div>`)
 	return template.HTML(b.String())
@@ -106,18 +116,23 @@ func (a *app) readingTotals(idx *readingIndex, loc *time.Location) template.HTML
 // currentStreak counts consecutive days ending today or yesterday. Yesterday counts
 // because a streak should not appear broken at 09:00 before you have read that day.
 func currentStreak(idx *readingIndex, loc *time.Location) int {
-	if len(idx.Dates) == 0 {
-		return 0
-	}
-	// Anchored on the current READING day, so a streak is not broken by the hour
-	// between midnight and the cutoff.
 	today, err := time.ParseInLocation("2006-01-02", readingDate(time.Now().Unix(), loc), loc)
 	if err != nil {
 		return 0
 	}
-	cursor := today
-	if _, ok := idx.Days[today.Format("2006-01-02")]; !ok {
-		cursor = today.AddDate(0, 0, -1)
+	return streakEndingAt(idx, today)
+}
+
+// streakEndingAt counts consecutive read days ending on day, or on the day before it when
+// day itself has no reading yet. Anchored on the READING day, so a streak is not broken by
+// the hour between midnight and the cutoff.
+func streakEndingAt(idx *readingIndex, day time.Time) int {
+	if len(idx.Dates) == 0 {
+		return 0
+	}
+	cursor := day
+	if _, ok := idx.Days[day.Format("2006-01-02")]; !ok {
+		cursor = day.AddDate(0, 0, -1)
 	}
 	n := 0
 	for {
@@ -127,6 +142,75 @@ func currentStreak(idx *readingIndex, loc *time.Location) int {
 		n++
 		cursor = cursor.AddDate(0, 0, -1)
 	}
+}
+
+// streakView is the streak as the page shows it: what the reader last CONFIRMED by syncing,
+// stretched over the days since if that streak was still alive when it synced.
+type streakView struct {
+	Shown      int  // the number on the tile
+	Confirmed  int  // the streak as of the last sync
+	DaysSince  int  // whole days between the sync day and today
+	Optimistic bool // Shown assumes the streak ran on through the unsynced days
+}
+
+// streakAsOf works out the tile. A streak is optimistic only when it was alive at the moment
+// of the last sync (it ended on the sync day or the day before) and at least a day has gone by
+// since; a streak already broken at sync time, or a sync today, shows the plain value. A
+// zero lastSync (no device has synced) shows the plain value too.
+func streakAsOf(idx *readingIndex, loc *time.Location, now, lastSync time.Time) streakView {
+	today, err := time.ParseInLocation("2006-01-02", readingDate(now.Unix(), loc), loc)
+	if err != nil {
+		return streakView{}
+	}
+	plain := streakEndingAt(idx, today)
+	if lastSync.IsZero() {
+		return streakView{Shown: plain, Confirmed: plain}
+	}
+	syncDay, err := time.ParseInLocation("2006-01-02", readingDate(lastSync.Unix(), loc), loc)
+	if err != nil || !syncDay.Before(today) {
+		return streakView{Shown: plain, Confirmed: plain}
+	}
+	confirmed := streakEndingAt(idx, syncDay)
+	if confirmed == 0 {
+		return streakView{Shown: plain, Confirmed: 0}
+	}
+	days := int(today.Sub(syncDay).Round(24 * time.Hour) / (24 * time.Hour))
+	return streakView{Shown: confirmed + days, Confirmed: confirmed, DaysSince: days, Optimistic: true}
+}
+
+// lastSyncAt is the latest time any live device synced, or zero.
+func (a *app) lastSyncAt(ctx context.Context, tk dblib.TenantKey) time.Time {
+	devices, err := a.devices.List(ctx, tk)
+	if err != nil {
+		return time.Time{}
+	}
+	var best time.Time
+	for _, d := range devices {
+		if d.Revoked {
+			continue
+		}
+		if t, err := time.Parse(time.RFC3339, d.LastSyncAt); err == nil && t.After(best) {
+			best = t
+		}
+	}
+	return best
+}
+
+// The sync line's copy, written by Opus.
+const (
+	streakNoteOne  = "1 day since sync · last confirmed %d"
+	streakNoteMany = "%d days since sync · last confirmed %d"
+)
+
+// streakNote is the small line under an optimistic streak.
+func streakNote(v streakView) string {
+	if !v.Optimistic {
+		return ""
+	}
+	if v.DaysSince == 1 {
+		return fmt.Sprintf(streakNoteOne, v.Confirmed)
+	}
+	return fmt.Sprintf(streakNoteMany, v.DaysSince, v.Confirmed)
 }
 
 func yearNav(years []int, active int) template.HTML {

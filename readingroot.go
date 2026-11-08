@@ -53,6 +53,7 @@ main > .listview:first-child{margin-top:0}
   border-radius:var(--r-card);padding:var(--sp-3)}
 .ko-tile-v{display:block;font-size:1.6rem;line-height:1.1;font-weight:600}
 .ko-tile-l{display:block;font-size:.8rem;color:var(--muted)}
+.ko-tile-n{display:block;font-size:.75rem;color:var(--muted)}
 
 .ko-calwrap{overflow-x:auto;padding-bottom:var(--sp-2)}
 .ko-cal{display:inline-block;min-width:max-content}
