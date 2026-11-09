@@ -189,17 +189,14 @@ func main() {
 }
 
 // nav is the plug's header. Keep it short — the brand already links home, so an entry
-// pointing at "/" would be a second route to the same page.
+// pointing at "/" would be a second route to the same page. There is no Review entry:
+// the owner found it confusing, and the review itself lives in vision.
 func nav(active string) []flowweb.NavLink {
 	links := []flowweb.NavLink{
-		// NO "Books" ENTRY. It was the scaffolded entity's link and it pointed at "/",
-		// which the reading calendar now owns — so the nav offered the same destination
-		// twice under two names, and the Active check (URL == active) lit both.
-		{Label: "Reading", URL: "/", Icon: "fa-solid fa-calendar-days"},
+		// NO "Reading" ENTRY: it pointed at "/" (the reading calendar), the page the brand
+		// already links to.
 		{Label: "Books", URL: "/books", Icon: "fa-solid fa-book"},
 		{Label: "Quotes", URL: "/quotes", Icon: "fa-solid fa-quote-left"},
-		// Review lives in vision now; the entry stays where the reader expects it.
-		{Label: "Review", URL: visionReviewURL(), Icon: "fa-solid fa-repeat"},
 		{Label: "Devices", URL: "/pair", Icon: "fa-solid fa-tablet-screen-button"},
 		{Label: "Plugin", URL: "/addon", Icon: "fa-solid fa-puzzle-piece"},
 	}

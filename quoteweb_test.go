@@ -435,8 +435,9 @@ func TestReviewMovedToVision(t *testing.T) {
 		}
 	}
 	for _, l := range nav("/") {
-		if l.Label == "Review" && !strings.Contains(l.URL, "vision") {
-			t.Errorf("the nav's Review still points at koreader: %s", l.URL)
+		// The owner asked for both gone: Reading is the home page, Review was confusing.
+		if l.Label == "Review" || l.Label == "Reading" {
+			t.Errorf("the nav still offers %s", l.Label)
 		}
 	}
 }
