@@ -1,5 +1,5 @@
 [Unit]
-Description=Koreader (xf mesh plug)
+Description=Reader (xf mesh plug)
 Requires=plug-reader.socket
 After=network-online.target nats-server.service postgresql.service plug-reader.socket
 Wants=network-online.target nats-server.service postgresql.service

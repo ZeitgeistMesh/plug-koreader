@@ -92,7 +92,7 @@ func (a *app) quoteView() quotebrowser.Config {
 		Order: quotebrowser.Newest, ReaderOrder: &reading,
 		// /quote?id=<event id> links predate Refs; a bare id is a koreader highlight.
 		DefaultSource: sourceKoreader,
-		BooksPath:     "/books",
+		BooksPath:     readingPath,
 		ListTitle:     "Quotes", ReaderTitle: "Quote", ListLabel: "Every quote", SourceLabel: "Book",
 		SearchPlaceholder: "Search your highlights…",
 		EmptyTitle:        "No quotes yet",

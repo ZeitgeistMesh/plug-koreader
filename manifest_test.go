@@ -1,11 +1,14 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"xf/controller/pkg/dblib"
 	"xf/controller/pkg/plugcfg"
+	"xf/controller/pkg/secretbox"
 )
 
 // testApp and testBase are the seam the generated conformance test also uses. Keep
@@ -16,12 +19,17 @@ func testApp() *app {
 		// The reading rail. Part of the ONE fixture rather than a second constructor
 		// beside it: two test apps drift, and the one that drifts is always the one
 		// the failing test used.
-		devices:   dblib.NewFakeDocStore[Device](),
-		pairCodes: dblib.NewFakeDocStore[PairCode](),
-		events:    dblib.NewFakeDocStore[ReadEvent](),
-		tokens:    dblib.NewFakeDocStore[TokenRef](),
-		cards:     dblib.NewFakeDocStore[Card](),
-		index:     newIndexCache(),
+		devices:    dblib.NewFakeDocStore[Device](),
+		pairCodes:  dblib.NewFakeDocStore[PairCode](),
+		events:     dblib.NewFakeDocStore[ReadEvent](),
+		tokens:     dblib.NewFakeDocStore[TokenRef](),
+		cards:      dblib.NewFakeDocStore[Card](),
+		index:      newIndexCache(),
+		sources:    dblib.NewFakeDocStore[Source](),
+		catalogs:   dblib.NewFakeDocStore[Catalog](),
+		secrets:    secretbox.Guard{Box: secretbox.New("a test key"), Name: "TEST_"},
+		refreshing: map[string]bool{},
+		files:      newFileCache(os.TempDir()+"/plug-reader-test-"+newID(), 1<<20, time.Hour, 1<<16),
 	}
 	a.item = a.itemEntity()
 	return a
@@ -85,3 +93,4 @@ func TestDemoTierIsDeliberate(t *testing.T) {
 			"demo with no seed is worse than none")
 	}
 }
+

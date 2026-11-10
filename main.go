@@ -5,7 +5,9 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -14,10 +16,12 @@ import (
 	"xf/controller/pkg/dblib"
 	"xf/controller/pkg/demo"
 	"xf/controller/pkg/flowweb"
+	"xf/controller/pkg/iam"
 	"xf/controller/pkg/plugauth"
 	"xf/controller/pkg/plugcfg"
 	"xf/controller/pkg/plugrun"
 	"xf/controller/pkg/resource"
+	"xf/controller/pkg/secretbox"
 	"xf/controller/pkg/xats"
 )
 
@@ -36,11 +40,22 @@ type app struct {
 	tokens    dblib.DocStore[TokenRef]
 	cards     dblib.DocStore[Card]
 
+	// The book server a person connects (source.go), the saved copy of its catalog and the
+	// temporary cache of files fetched from it (catalog.go).
+	sources    dblib.DocStore[Source]
+	catalogs   dblib.DocStore[Catalog]
+	secrets    secretbox.Guard
+	files      *fileCache
+	refreshMu  sync.Mutex
+	refreshing map[string]bool
+	iam        roleHolder
+	clientFn   func(*Source) (*opdsClient, error) // tests only
+
 	// Derived state. index caches the aggregate over events (summary.go); tz caches the
 	// caller→timezone resolve. Both are rebuilt rather than persisted — they are a view
 	// of the raw rows, and a view that can go stale silently is worse than one that is
 	// recomputed when the only writer runs.
-	index   *indexCache
+	index *indexCache
 	// demoSeeded remembers the demo workspaces already seeded by this process (demo.go).
 	demoSeeded sync.Map
 
@@ -104,10 +119,21 @@ func main() {
 	if err != nil {
 		log.Fatalf("plug-reader: card store: %v", err)
 	}
+	sources, err := dblib.NewPostgresDocStore[Source](ctx, pg, collSource)
+	if err != nil {
+		log.Fatalf("plug-reader: source store: %v", err)
+	}
+	catalogs, err := dblib.NewPostgresDocStore[Catalog](ctx, pg, collCatalog)
+	if err != nil {
+		log.Fatalf("plug-reader: catalog store: %v", err)
+	}
 
 	a := &app{items: items, webGroup: base.WebGroup,
 		devices: devices, pairCodes: pairCodes, events: events, tokens: tokens, cards: cards,
-		index: newIndexCache(),
+		index: newIndexCache(), sources: sources, catalogs: catalogs,
+		secrets: secretbox.GuardFromEnv("PLUG_READER_"), refreshing: map[string]bool{},
+		files: newFileCache(plugcfg.Env("PLUG_READER_CACHE_DIR", filepath.Join(os.TempDir(), "plug-reader-books")),
+			int64(plugcfg.EnvInt("PLUG_READER_CACHE_MAX_MB", 1024))<<20, 24*time.Hour, int64(plugcfg.EnvInt("PLUG_READER_CACHE_MAX_FILE_MB", 200))<<20),
 		publicURL: plugcfg.Env("PLUG_READER_PUBLIC_URL", plugcfg.SvcURL("reader"))}
 	a.item = a.itemEntity()
 
@@ -141,8 +167,14 @@ func main() {
 			// /quotes, /quote and the browser's action route: the shared quote
 			// browser (quotebrowse.go), mounted rather than written here.
 			a.quoteView().Mount(mux, a.webGate, a.page)
-			mux.HandleFunc("/books", a.serveBooks)
-			mux.HandleFunc("/books.json", a.serveBooksExport)
+			// /books is the saved list of the person's book server; what they have read, by
+			// book, is /reading.
+			mux.HandleFunc(booksPath, a.serveCatalog)
+			mux.HandleFunc(booksPath+"/file", a.serveBookFile)
+			mux.HandleFunc(booksPath+"/cover", a.serveBookCover)
+			mux.HandleFunc(settingsPath, a.serveSettings)
+			mux.HandleFunc(readingPath, a.serveBooks)
+			mux.HandleFunc(readingPath+".json", a.serveBooksExport)
 			// Review moved to vision (design §1.4): the same session, starred memories only.
 			mux.HandleFunc("/review", a.serveReviewMoved)
 			mux.HandleFunc("/tag", a.serveTag)
@@ -180,10 +212,16 @@ func main() {
 		log.Fatalf("plug-reader: %v", err)
 	}
 	a.rt = rt
+	a.iam = &iam.Client{Rt: rt, Target: plugcfg.Env("PLUG_READER_IAM_JID", plugcfg.Svc("iam"))}
+	// Without a meshsec key every role check goes out unproven and is denied, which turns a
+	// granted iam.tailnet.use into "no": the owner's own server would then be refused. The
+	// deploy gate catches it; this is the loud log if it happens anyway.
+	iam.WatchProvisioning(ctx, rt, base.ComponentJID, true)
 	a.vision = rtVisionPeer{a}
 	defer rt.Close()
 	a.subscribeVisionChanged()
 
+	go a.files.janitor(ctx)
 	go demo.RunCleanup(ctx, pg.DB(), time.Hour, 7*24*time.Hour, log.Printf)
 	<-ctx.Done()
 }
@@ -195,10 +233,12 @@ func nav(active string) []flowweb.NavLink {
 	links := []flowweb.NavLink{
 		// NO "Reading" ENTRY: it pointed at "/" (the reading calendar), the page the brand
 		// already links to.
-		{Label: "Books", URL: "/books", Icon: "fa-solid fa-book"},
+		{Label: "Books", URL: booksPath, Icon: "fa-solid fa-book"},
+		{Label: "Read", URL: readingPath, Icon: "fa-solid fa-book-open-reader"},
 		{Label: "Quotes", URL: "/quotes", Icon: "fa-solid fa-quote-left"},
 		{Label: "Devices", URL: "/pair", Icon: "fa-solid fa-tablet-screen-button"},
 		{Label: "Plugin", URL: "/addon", Icon: "fa-solid fa-puzzle-piece"},
+		{Label: ui.NavSettings, URL: settingsPath, Icon: "fa-solid fa-gear"},
 	}
 	for i := range links {
 		links[i].Active = links[i].URL == active
@@ -228,7 +268,7 @@ func (a *app) manifest(base plugcfg.Base) xats.Manifest {
 		// and the required scopes on each. That is what mesh.verify checks, and
 		// verify_contract_test.go asserts it here so a drift is a failing test rather
 		// than a failed release.
-		Capabilities: append(a.item.Capabilities(), pastListCapability(), readingSessionsCapability(), quoteListCapability(), quoteExportCapability(), cardsExportCapability(), lifeGoalsCapability()), // pastlist.go, quotelist.go, quoteexport.go
+		Capabilities: append(append(append(a.item.Capabilities(), sourceCapabilities()...), catalogCapabilities()...), pastListCapability(), readingSessionsCapability(), quoteListCapability(), quoteExportCapability(), cardsExportCapability(), lifeGoalsCapability()), // pastlist.go, quotelist.go, quoteexport.go
 		Entities:     []xats.EntityDecl{a.item.EntityDecl()},
 	}
 }
@@ -237,6 +277,21 @@ func (a *app) dispatch(ctx context.Context, node string, meta map[string]any) ma
 	tk := tenant(strings.TrimSpace(plugrun.Str(meta, "caller_user_id")))
 	if a.item.Handles(node) {
 		return a.item.Dispatch(ctx, node, tk, meta)
+	}
+	caller := strings.TrimSpace(plugrun.Str(meta, "caller_user_id"))
+	switch node {
+	case capSourceGet:
+		return a.handleSourceGet(ctx, caller, tk, meta)
+	case capSourceSet:
+		return a.handleSourceSet(ctx, caller, tk, meta)
+	case capSourceTest:
+		return a.handleSourceTest(ctx, caller, tk, meta)
+	case capSourceDelete:
+		return a.handleSourceDelete(ctx, caller, tk, meta)
+	case capCatalogList:
+		return a.handleCatalogList(ctx, caller, tk, meta)
+	case capCatalogRefresh:
+		return a.handleCatalogRefresh(ctx, caller, tk, meta)
 	}
 	if node == capReadingSessions {
 		return a.handleReadingSessions(ctx, strings.TrimSpace(plugrun.Str(meta, "caller_user_id")), tk, meta)
@@ -262,3 +317,4 @@ func (a *app) dispatch(ctx context.Context, node string, meta map[string]any) ma
 	msg := "unknown capability: " + node
 	return map[string]any{"error": msg, "body": msg}
 }
+

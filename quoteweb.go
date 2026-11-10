@@ -108,7 +108,7 @@ func (a *app) serveBooks(w http.ResponseWriter, r *http.Request) {
 		view.RenderFragment(w, q, rows, total)
 		return
 	}
-	p := a.page("/books")
+	p := a.page(readingPath)
 	p.StartFor(w, r, "Books")
 	view.Render(w, q, rows, total)
 	p.End(w)
@@ -116,7 +116,7 @@ func (a *app) serveBooks(w http.ResponseWriter, r *http.Request) {
 
 func booksListView() webui.ListView {
 	return webui.ListView{
-		Action:            "/books",
+		Action:            readingPath,
 		RootID:            "lv-books",
 		Title:             "Books",
 		SearchPlaceholder: "Search your books…",

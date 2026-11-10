@@ -1,5 +1,5 @@
 [Unit]
-Description=Koreader (xf mesh plug) (activation socket)
+Description=Reader (xf mesh plug) (activation socket)
 # Deliberately NO PartOf=. PartOf propagates stop/restart from the service to the
 # socket, and combined with RemoveOnStop below that DELETES the socket file whenever the
 # service stops — leaving nothing to accept a connection and re-activate it. A clean
