@@ -1,12 +1,12 @@
 package main
 
-// lifesignals.go — koreader's feed into life's KNOWLEDGE bucket (design §6, P4).
+// lifesignals.go — reader's feed into life's KNOWLEDGE bucket (design §6, P4).
 //
-// Life's buckets were filled only by goals, and neither thing koreader knows is a goal:
+// Life's buckets were filled only by goals, and neither thing reader knows is a goal:
 // reading time this week is a MEASURE, not a target, and forcing it into one would put a
-// fake progress bar on a dashboard. So koreader answers life's existing life.goals.list
-// node with no goals and two SIGNALS — current readings, each with a tone koreader decides,
-// because only koreader knows what its numbers mean:
+// fake progress bar on a dashboard. So reader answers life's existing life.goals.list
+// node with no goals and two SIGNALS — current readings, each with a tone reader decides,
+// because only reader knows what its numbers mean:
 //
 //	reading_week   time and books this week; "good" when above the trailing four-week
 //	               median, else "neutral"
@@ -90,7 +90,7 @@ func readingSignals(idx *readingIndex, loc *time.Location, now time.Time, public
 	if thisSecs > 0 {
 		value = fmt.Sprintf("%s · %d %s", hoursMinutes(thisSecs), thisBooks, plural(thisBooks, "book"))
 	}
-	week := lifegoal.Signal{Source: "koreader", Key: "reading_week", Bucket: "knowledge", Title: "Reading this week",
+	week := lifegoal.Signal{Source: "reader", Key: "reading_week", Bucket: "knowledge", Title: "Reading this week",
 		Value: value, Tone: tone, Note: note, Since: monday.Format(time.RFC3339), DeepLink: publicURL + "/"}
 
 	cutoff := now.AddDate(0, 0, -30).Unix()
@@ -100,7 +100,7 @@ func readingSignals(idx *readingIndex, loc *time.Location, now time.Time, public
 			quotes++
 		}
 	}
-	month := lifegoal.Signal{Source: "koreader", Key: "quotes_month", Bucket: "knowledge", Title: "Highlights, last 30 days",
+	month := lifegoal.Signal{Source: "reader", Key: "quotes_month", Bucket: "knowledge", Title: "Highlights, last 30 days",
 		Value: fmt.Sprintf("%d %s", quotes, plural(quotes, "highlight")), Tone: lifegoal.ToneNeutral,
 		Since: now.AddDate(0, 0, -30).In(loc).Format(time.RFC3339), DeepLink: publicURL + "/quotes"}
 	return []lifegoal.Signal{week, month}
