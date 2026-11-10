@@ -6,5 +6,5 @@ bin/
 # plug. Nothing consumes it — the deploy rail builds into bin/ — and leaving it
 # untracked made every stage report source_commit "<sha>-dirty", which is the one
 # signal that says "the bytes built are not the bytes this commit names".
-/plug-koreader
+/plug-reader
 *.test

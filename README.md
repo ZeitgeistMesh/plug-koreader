@@ -1,4 +1,4 @@
-# plug-koreader
+# plug-reader
 
 **Your reading, measured — pages, sessions and highlights, straight from your e-reader.**
 
@@ -33,13 +33,13 @@ ephemeral workspace and runs the real code against it.
 
 The seeds live in `demo.go` and should demonstrate the product's RANGE, not merely be
 non-empty — someone should be able to learn what this plug does without clicking.
-Verify anonymously (`curl -sL -c jar -b jar https://koreader.zm.is/`); a logged-in
+Verify anonymously (`curl -sL -c jar -b jar https://reader.zm.is/`); a logged-in
 browser never takes the demo path.
 
 ## Deployment
 
 ```sh
-mesh.deploy plug-koreader
+mesh.deploy plug-reader
 ```
 
 Staging builds and proves the binary on itself; production asks for it, fetches those

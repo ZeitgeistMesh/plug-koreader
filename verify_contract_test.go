@@ -72,7 +72,7 @@ func TestManifestIdentity(t *testing.T) {
 // the path is wired; silence, or a reply that reads as "unknown capability", is how it
 // detects one that is not.
 func TestDispatchRejectsUnknownTyped(t *testing.T) {
-	out := testApp().dispatch(t.Context(), "koreader.definitely-not-a-capability", map[string]any{})
+	out := testApp().dispatch(t.Context(), "reader.definitely-not-a-capability", map[string]any{})
 	if out == nil {
 		t.Fatal("dispatch returned nil for an unknown node; it must return a typed rejection")
 	}

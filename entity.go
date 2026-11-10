@@ -14,22 +14,22 @@ import (
 	"xf/controller/pkg/resource"
 )
 
-// koreaderApp is this plug's application identity — the name and logo its header shows
+// readerApp is this plug's application identity — the name and logo its header shows
 // on EVERY page. It is a required argument to resource.New and is passed to every
 // entity, so the header cannot differ from route to route: there is one value, and
 // nothing to keep in step. An entity's own Icon/Emoji is its glyph in the
 // window-manager menu and never reaches the page header.
-var koreaderApp = &resource.Identity{
-	Name: "Koreader", Icon: "fa-solid fa-book-open", Emoji: "📖", IconColor: "#c9975c",
+var readerApp = &resource.Identity{
+	Name: "Reader", Icon: "fa-solid fa-book-open", Emoji: "📖", IconColor: "#c9975c",
 }
 
 func (a *app) itemEntity() *resource.Resource[Book] {
 	expose := true
-	return resource.New(koreaderApp, resource.Spec[Book]{
-		Name: "book", Prefix: "koreader", Group: a.webGroup,
+	return resource.New(readerApp, resource.Spec[Book]{
+		Name: "book", Prefix: "reader", Group: a.webGroup,
 		Title: "Book", Titles: "Book" + "s", Base: "/book",
 		Description: "TODO: one line describing what this record is.",
-		Icon:        "fa-solid fa-book-open", Emoji: "📖", IconColor: koreaderApp.IconColor,
+		Icon:        "fa-solid fa-book-open", Emoji: "📖", IconColor: readerApp.IconColor,
 
 		// Scopes are what make these PRODUCT capabilities. mesh.verify fails a
 		// component whose capabilities are all ungated — "all zero of them advertise

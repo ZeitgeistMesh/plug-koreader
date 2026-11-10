@@ -96,6 +96,6 @@ func TestQuoteExportPagesByArrivalAndResumes(t *testing.T) {
 func TestQuoteExportIsInternal(t *testing.T) {
 	c := quoteExportCapability()
 	if !c.Internal || c.ExposeToMCP {
-		t.Error("koreader.quote.export is a feed between plugs and must stay off MCP")
+		t.Error("reader.quote.export is a feed between plugs and must stay off MCP")
 	}
 }

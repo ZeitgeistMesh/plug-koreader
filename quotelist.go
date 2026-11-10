@@ -26,7 +26,7 @@ import (
 	"xf/controller/pkg/xats"
 )
 
-const capQuoteList = "koreader.quote.list"
+const capQuoteList = "reader.quote.list"
 
 const quoteListDefaultLimit = 500
 

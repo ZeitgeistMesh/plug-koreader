@@ -178,8 +178,8 @@ func (a *app) serveAddon(w http.ResponseWriter, r *http.Request) {
 // draws a table without them is the "styled nowhere" half of the same bug.
 func (a *app) page(active string) flowweb.Page {
 	return flowweb.Page{
-		Brand: koreaderApp.Name, Emoji: koreaderApp.Emoji, Icon: koreaderApp.Icon,
-		IconColor: koreaderApp.IconColor,
+		Brand: readerApp.Name, Emoji: readerApp.Emoji, Icon: readerApp.Icon,
+		IconColor: readerApp.IconColor,
 		CSS:       webui.AppShellCSS,
 		HeadHTML:  webui.FontAwesomeHead + webui.ListViewHead() + koSchemaCSS + koReadingCSS + quotebrowser.HeadHTML(),
 		Nav:       nav(active),

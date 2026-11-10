@@ -304,7 +304,7 @@ func TestAForgedIdentityHeaderCannotIngest(t *testing.T) {
 	raw, _ := json.Marshal(ingestRequest{Events: sampleEvents(1, 1_700_000_000)})
 	r := httptest.NewRequest(http.MethodPost, "/api/ingest", bytes.NewReader(raw))
 	r.Header.Set("Remote-Email", "reader@zm.is")
-	r.Header.Set("Remote-Groups", "plug_koreader")
+	r.Header.Set("Remote-Groups", "plug_reader")
 	rec := httptest.NewRecorder()
 	a.serveIngest(rec, r)
 
@@ -326,7 +326,7 @@ func TestTheAddonArchiveContainsThePluginDirectory(t *testing.T) {
 	rec := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/addon/"+addonDirName+".zip", nil)
 	r.Header.Set("Remote-Email", "reader@zm.is")
-	r.Header.Set("Remote-Groups", "plug_koreader")
+	r.Header.Set("Remote-Groups", "plug_reader")
 	a.serveAddonZip(rec, r)
 
 	if rec.Code != http.StatusOK {
@@ -358,7 +358,7 @@ func TestThePluginSourceCanBeReadWithoutDownloading(t *testing.T) {
 	rec := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/addon/file/main.lua", nil)
 	r.Header.Set("Remote-Email", "reader@zm.is")
-	r.Header.Set("Remote-Groups", "plug_koreader")
+	r.Header.Set("Remote-Groups", "plug_reader")
 	a.serveAddonFile(rec, r)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d", rec.Code)
@@ -378,7 +378,7 @@ func TestThePluginFileRouteCannotEscapeItsDirectory(t *testing.T) {
 		rec := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodGet, attempt, nil)
 		r.Header.Set("Remote-Email", "reader@zm.is")
-		r.Header.Set("Remote-Groups", "plug_koreader")
+		r.Header.Set("Remote-Groups", "plug_reader")
 		a.serveAddonFile(rec, r)
 		if rec.Code == http.StatusOK && strings.Contains(rec.Body.String(), "package main") {
 			t.Errorf("%s served a file outside the plugin directory", attempt)

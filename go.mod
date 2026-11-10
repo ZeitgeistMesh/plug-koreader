@@ -1,4 +1,4 @@
-module xf/plug-koreader
+module xf/plug-reader
 
 go 1.25.0
 

@@ -85,7 +85,7 @@ type annCache struct {
 	m  map[string]*annEntry
 }
 
-func (a *app) visionJID() string { return plugcfg.Env("PLUG_KOREADER_VISION_JID", plugcfg.Svc("vision")) }
+func (a *app) visionJID() string { return plugcfg.Env("PLUG_READER_VISION_JID", plugcfg.Svc("vision")) }
 
 func (a *app) annCacheFor() *annCache {
 	a.annOnce.Do(func() {
@@ -143,7 +143,7 @@ func (a *app) loadAnnotations(caller string) {
 		// A failed fetch keeps the last good state: a known star is still true while
 		// vision is briefly away.
 		e.err = errText
-		log.Printf("plug-koreader: vision annotations: %s", errText)
+		log.Printf("plug-reader: vision annotations: %s", errText)
 		return
 	}
 	e.items, e.err = items, ""
@@ -208,7 +208,7 @@ func (a *app) subscribeVisionChanged() {
 		}
 	})
 	if err != nil {
-		log.Printf("plug-koreader: subscribe %s: %v", subjectVisionChanged, err)
+		log.Printf("plug-reader: subscribe %s: %v", subjectVisionChanged, err)
 	}
 }
 

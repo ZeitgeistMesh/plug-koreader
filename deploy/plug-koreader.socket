@@ -13,14 +13,14 @@ Description=Koreader (xf mesh plug) (activation socket)
 # in the fleet carry PartOf= because they were written by following it.
 
 [Socket]
-ListenStream=/code/run/koreader.sock
+ListenStream=/code/run/reader.sock
 SocketMode=0660
 SocketUser=code
 # caddy, not code: the edge proxies to this socket, and without the group it cannot
 # open it. The symptom is an empty 200, which appears in no log.
 SocketGroup=caddy
 RemoveOnStop=yes
-Service=plug-koreader.service
+Service=plug-reader.service
 
 [Install]
 WantedBy=sockets.target

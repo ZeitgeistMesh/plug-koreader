@@ -457,7 +457,7 @@ func (a *app) serveReviewMoved(w http.ResponseWriter, r *http.Request) {
 
 // visionReviewURL is vision's review on this box (vision.d.zm.is on staging).
 func visionReviewURL() string {
-	return strings.TrimRight(plugcfg.Env("PLUG_KOREADER_VISION_URL", plugcfg.SvcURL("vision")), "/") + "/review"
+	return strings.TrimRight(plugcfg.Env("PLUG_READER_VISION_URL", plugcfg.SvcURL("vision")), "/") + "/review"
 }
 
 // displayTitle is how a book's title is shown.

@@ -25,11 +25,11 @@ import (
 	"xf/controller/pkg/xats"
 )
 
-const capPastList = "koreader.past.list"
+const capPastList = "reader.past.list"
 
 func pastListCapability() xats.Capability {
 	return xats.Capability{
-		Name: capPastList, Command: capPastList, Title: "What Happened in Koreader",
+		Name: capPastList, Command: capPastList, Title: "What Happened in Reader",
 		Description: "What you read in a window: each book you read on each day (pages and minutes), and the passages you " +
 			"highlighted or bookmarked (by book, never the text); plus pages and minutes read. The shared activity contract " +
 			"Next's Past view reads.",

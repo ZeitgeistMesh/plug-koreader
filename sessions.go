@@ -18,7 +18,7 @@ import (
 	"xf/controller/pkg/xats"
 )
 
-const capReadingSessions = "koreader.reading.sessions"
+const capReadingSessions = "reader.reading.sessions"
 
 func readingSessionsCapability() xats.Capability {
 	return xats.Capability{

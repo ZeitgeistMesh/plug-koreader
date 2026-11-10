@@ -68,7 +68,7 @@ func TestBooksExportOpensInTheBrowser(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/books.json", nil)
 	r.Header.Set("Remote-Email", "reader@zm.is")
-	r.Header.Set("Remote-Groups", "plug_koreader")
+	r.Header.Set("Remote-Groups", "plug_reader")
 	a.serveBooksExport(w, r)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())

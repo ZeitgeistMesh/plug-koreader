@@ -1,4 +1,4 @@
-// Command plug-koreader — Your reading, measured — pages, sessions and highlights, straight from your e-reader.
+// Command plug-reader — Your reading, measured — pages, sessions and highlights, straight from your e-reader.
 package main
 
 import (
@@ -60,55 +60,55 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	base := plugcfg.LoadBase("PLUG_KOREADER_")
+	base := plugcfg.LoadBase("PLUG_READER_")
 	// Declared HERE, never derived in a library: xfctl finds a plug's JID by
 	// regex-scanning THIS repository for exactly this idiom. A JID that lives only in a
 	// shared package is invisible to it — the plug then gets an EMPTY systemd env file,
 	// no NATS configuration and no XMPP component, and nothing says so.
-	base.ComponentJID = plugcfg.Env("PLUG_KOREADER_COMPONENT_JID", plugcfg.Svc("koreader"))
-	base.ComponentName = plugcfg.Env("PLUG_KOREADER_COMPONENT_NAME", "plug-koreader")
-	base.WebGroup = plugcfg.Env("PLUG_KOREADER_WEB_GROUP", "plug_koreader")
-	base.SocketPath = plugcfg.Env("PLUG_KOREADER_SOCKET_PATH",
-		plugcfg.RunDir()+"/koreader.sock")
+	base.ComponentJID = plugcfg.Env("PLUG_READER_COMPONENT_JID", plugcfg.Svc("reader"))
+	base.ComponentName = plugcfg.Env("PLUG_READER_COMPONENT_NAME", "plug-reader")
+	base.WebGroup = plugcfg.Env("PLUG_READER_WEB_GROUP", "plug_reader")
+	base.SocketPath = plugcfg.Env("PLUG_READER_SOCKET_PATH",
+		plugcfg.RunDir()+"/reader.sock")
 
 	pg, err := dblib.OpenPostgres(ctx, dblib.PostgresOptions{
-		DSN: plugcfg.Env("PLUG_KOREADER_POSTGRES_DSN", "postgresql:///koreader?host=/run/postgresql&sslmode=disable"),
+		DSN: plugcfg.Env("PLUG_READER_POSTGRES_DSN", "postgresql:///koreader?host=/run/postgresql&sslmode=disable"),
 	})
 	if err != nil {
-		log.Fatalf("plug-koreader: postgres: %v", err)
+		log.Fatalf("plug-reader: postgres: %v", err)
 	}
 	defer pg.Close()
 
 	items, err := dblib.NewPostgresDocStore[Book](ctx, pg, collBooks)
 	if err != nil {
-		log.Fatalf("plug-koreader: store: %v", err)
+		log.Fatalf("plug-reader: store: %v", err)
 	}
 
 	devices, err := dblib.NewPostgresDocStore[Device](ctx, pg, collDevices)
 	if err != nil {
-		log.Fatalf("plug-koreader: device store: %v", err)
+		log.Fatalf("plug-reader: device store: %v", err)
 	}
 	pairCodes, err := dblib.NewPostgresDocStore[PairCode](ctx, pg, collPairCodes)
 	if err != nil {
-		log.Fatalf("plug-koreader: pair-code store: %v", err)
+		log.Fatalf("plug-reader: pair-code store: %v", err)
 	}
 	events, err := dblib.NewPostgresDocStore[ReadEvent](ctx, pg, collEvents)
 	if err != nil {
-		log.Fatalf("plug-koreader: event store: %v", err)
+		log.Fatalf("plug-reader: event store: %v", err)
 	}
 	tokens, err := dblib.NewPostgresDocStore[TokenRef](ctx, pg, collTokens)
 	if err != nil {
-		log.Fatalf("plug-koreader: token store: %v", err)
+		log.Fatalf("plug-reader: token store: %v", err)
 	}
 	cards, err := dblib.NewPostgresDocStore[Card](ctx, pg, collCards)
 	if err != nil {
-		log.Fatalf("plug-koreader: card store: %v", err)
+		log.Fatalf("plug-reader: card store: %v", err)
 	}
 
 	a := &app{items: items, webGroup: base.WebGroup,
 		devices: devices, pairCodes: pairCodes, events: events, tokens: tokens, cards: cards,
 		index: newIndexCache(),
-		publicURL: plugcfg.Env("PLUG_KOREADER_PUBLIC_URL", plugcfg.SvcURL("koreader"))}
+		publicURL: plugcfg.Env("PLUG_READER_PUBLIC_URL", plugcfg.SvcURL("reader"))}
 	a.item = a.itemEntity()
 
 	rt, err := plugrun.Run(ctx, plugrun.Spec{
@@ -117,8 +117,8 @@ func main() {
 		// nothing on this side says so — only prosody complains, bouncing a delivery
 		// error back to whoever messaged the plug. Four plugs lost XMPP for two days
 		// this way and the symptom was a red (!) on a phone.
-		XMPPAddress:    plugcfg.Env("PLUG_KOREADER_XMPP_ADDRESS", ""),
-		XMPPSecretFile: plugcfg.Env("PLUG_KOREADER_XMPP_SECRET_FILE", ""),
+		XMPPAddress:    plugcfg.Env("PLUG_READER_XMPP_ADDRESS", ""),
+		XMPPSecretFile: plugcfg.Env("PLUG_READER_XMPP_SECRET_FILE", ""),
 
 		Base:     base,
 		Manifest: a.manifest(base),
@@ -165,8 +165,8 @@ func main() {
 			a.generated = a.item.Handler(rt.WebAuthz(), nav("/"))
 			return mux
 		},
-		BillingJID: plugcfg.Env("PLUG_KOREADER_BILLING_JID", plugcfg.Svc("billing")),
-		LocalTrust: plugcfg.EnvBool("PLUG_KOREADER_LOCAL_TRUST", true),
+		BillingJID: plugcfg.Env("PLUG_READER_BILLING_JID", plugcfg.Svc("billing")),
+		LocalTrust: plugcfg.EnvBool("PLUG_READER_LOCAL_TRUST", true),
 		// A demo subject resolves to its own ephemeral workspace on the web path AND
 		// on cross-plug fan-out, so the demo runs the REAL code against isolated
 		// storage rather than a mock of it.
@@ -177,7 +177,7 @@ func main() {
 		DemoReadable: func(node string) bool { return node == capQuoteExport || node == capLifeGoalsList },
 	})
 	if err != nil {
-		log.Fatalf("plug-koreader: %v", err)
+		log.Fatalf("plug-reader: %v", err)
 	}
 	a.rt = rt
 	a.vision = rtVisionPeer{a}
@@ -219,8 +219,8 @@ func (a *app) webGate(w http.ResponseWriter, r *http.Request) (string, bool) {
 
 func (a *app) manifest(base plugcfg.Base) xats.Manifest {
 	return xats.Manifest{
-		Name: base.ComponentName, Title: koreaderApp.Name, Subtitle: "Your reading, measured — pages, sessions and highlights, straight from your e-reader.",
-		Emoji: koreaderApp.Emoji, Icon: koreaderApp.Icon, IconColor: koreaderApp.IconColor,
+		Name: base.ComponentName, Title: readerApp.Name, Subtitle: "Your reading, measured — pages, sessions and highlights, straight from your e-reader.",
+		Emoji: readerApp.Emoji, Icon: readerApp.Icon, IconColor: readerApp.IconColor,
 		URL: a.publicURL, JID: base.ComponentJID, Version: base.ComponentVersion,
 		Demo:     true,
 		Overview: "Your reading, measured — pages, sessions and highlights, straight from your e-reader.",

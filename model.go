@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	scopeUser = "koreader:user"
+	scopeUser = "reader:user"
 	collBooks = "koreader_books"
 )
 

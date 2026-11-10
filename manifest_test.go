@@ -12,7 +12,7 @@ import (
 // their names: verify_contract_test.go is regenerated from the scaffold and calls them.
 func testApp() *app {
 	a := &app{
-		items: dblib.NewFakeDocStore[Book](), webGroup: "plug_koreader", publicURL: "https://koreader.zm.is",
+		items: dblib.NewFakeDocStore[Book](), webGroup: "plug_reader", publicURL: "https://reader.zm.is",
 		// The reading rail. Part of the ONE fixture rather than a second constructor
 		// beside it: two test apps drift, and the one that drifts is always the one
 		// the failing test used.
@@ -28,7 +28,7 @@ func testApp() *app {
 }
 
 func testBase() plugcfg.Base {
-	return plugcfg.Base{ComponentName: "plug-koreader", ComponentJID: "koreader.zm.is", ComponentVersion: "test"}
+	return plugcfg.Base{ComponentName: "plug-reader", ComponentJID: "reader.zm.is", ComponentVersion: "test"}
 }
 
 // TestManifestContract pins the capability surface. The manifest — not this
@@ -43,14 +43,14 @@ func TestManifestContract(t *testing.T) {
 		// life.goals.list is the one shared node outside the namespace: life's contract,
 		// answered under the same name by every plug that feeds a life bucket (dose, habits,
 		// time, cash), and Internal so no resolver ever sees two of it.
-		if !strings.HasPrefix(c.Name, "koreader.") && !(c.Name == capLifeGoalsList && c.Internal) {
+		if !strings.HasPrefix(c.Name, "reader.") && !(c.Name == capLifeGoalsList && c.Internal) {
 			t.Errorf("capability %q is outside this plug's namespace", c.Name)
 		}
 		if strings.TrimSpace(c.Title) == "" || strings.TrimSpace(c.Description) == "" {
 			t.Errorf("capability %q needs a Title and Description — they reach MCP, chat help and docs", c.Name)
 		}
 	}
-	if m.JID != "koreader.zm.is" {
+	if m.JID != "reader.zm.is" {
 		t.Errorf("manifest JID = %q", m.JID)
 	}
 }
@@ -80,7 +80,7 @@ func TestTenantIsolation(t *testing.T) {
 // which way it went.
 func TestDemoTierIsDeliberate(t *testing.T) {
 	if !testApp().manifest(testBase()).Demo {
-		t.Fatal("plug-koreader was scaffolded WITH a demo tier; if that is no longer true, " +
+		t.Fatal("plug-reader was scaffolded WITH a demo tier; if that is no longer true, " +
 			"remove the demo gate, the seed and the demo_or_auth vhost together — an advertised " +
 			"demo with no seed is worse than none")
 	}

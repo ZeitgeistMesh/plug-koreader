@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	capQuoteExport = "koreader.quote.export"
+	capQuoteExport = "reader.quote.export"
 
 	// SubjectAnnotationsChanged is published (best effort) after a sync stores a new or
 	// changed annotation. Not a command: a notification vision watches to pull its mirror.
@@ -153,7 +153,7 @@ func (a *app) emitAnnotationsChanged(subject, workspace string) {
 // koreader.cards.export: the review state this plug used to keep, for vision's ONE-SHOT import
 // (design §1.4). Spaced repetition moved to vision; koreader_cards is read here, never
 // written, and goes away one release after vision's /review is verified on prod.
-const capCardsExport = "koreader.cards.export"
+const capCardsExport = "reader.cards.export"
 
 func cardsExportCapability() xats.Capability {
 	return xats.Capability{

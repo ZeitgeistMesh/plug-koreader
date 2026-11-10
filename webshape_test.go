@@ -55,7 +55,7 @@ func gatedGet(t *testing.T, a *app, h http.HandlerFunc, path string) string {
 	t.Helper()
 	r := httptest.NewRequest(http.MethodGet, path, nil)
 	r.Header.Set("Remote-Email", "reader@zm.is")
-	r.Header.Set("Remote-Groups", "plug_koreader")
+	r.Header.Set("Remote-Groups", "plug_reader")
 	w := httptest.NewRecorder()
 	h(w, r)
 	if w.Code != http.StatusOK {

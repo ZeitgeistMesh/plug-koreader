@@ -1,16 +1,16 @@
 [Unit]
 Description=Koreader (xf mesh plug)
-Requires=plug-koreader.socket
-After=network-online.target nats-server.service postgresql.service plug-koreader.socket
+Requires=plug-reader.socket
+After=network-online.target nats-server.service postgresql.service plug-reader.socket
 Wants=network-online.target nats-server.service postgresql.service
 
 [Service]
 Type=simple
-WorkingDirectory=/code/xf/plug-koreader
+WorkingDirectory=/code/xf/plug-reader
 EnvironmentFile=/code/xf/.tmp/xfctl/systemd/env/common.env
-EnvironmentFile=/code/xf/.tmp/xfctl/systemd/env/plug-koreader.env
-ExecStart=/code/xf/plug-koreader/bin/plug-koreader
-Sockets=plug-koreader.socket
+EnvironmentFile=/code/xf/.tmp/xfctl/systemd/env/plug-reader.env
+ExecStart=/code/xf/plug-reader/bin/plug-reader
+Sockets=plug-reader.socket
 User=code
 Group=code
 NoNewPrivileges=yes
@@ -26,7 +26,7 @@ ProtectClock=yes
 LockPersonality=yes
 Restart=on-failure
 RestartSec=2
-SyslogIdentifier=plug-koreader
+SyslogIdentifier=plug-reader
 
 [Install]
 WantedBy=multi-user.target

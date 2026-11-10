@@ -39,7 +39,7 @@ func TestKoreaderSaysWhatWasReadAndWhen(t *testing.T) {
 	}
 	read, hl := r.Items[0], r.Items[1]
 	if read.Verb != activity.Logged || read.Title != "Read: Dune — 3 pages" || read.Value != 5 || read.Unit != "min" ||
-		!read.At.Equal(time.Unix(at(21, 0), 0)) || read.URL != "https://koreader.zm.is/day?d=2026-09-20" || read.Private {
+		!read.At.Equal(time.Unix(at(21, 0), 0)) || read.URL != "https://reader.zm.is/day?d=2026-09-20" || read.Private {
 		t.Fatalf("reading = %+v", read)
 	}
 	if hl.Verb != activity.Logged || hl.Title != "Highlighted a passage in Dune" || strings.Contains(hl.Title, "mind-killer") {

@@ -48,7 +48,7 @@ func browse(t *testing.T, a *app, target string) string {
 	a.quoteView().Mount(mux, a.webGate, a.page)
 	r := httptest.NewRequest(http.MethodGet, target, nil)
 	r.Header.Set("Remote-Email", "reader@zm.is")
-	r.Header.Set("Remote-Groups", "plug_koreader")
+	r.Header.Set("Remote-Groups", "plug_reader")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, r)
 	if w.Code != http.StatusOK {
@@ -214,7 +214,7 @@ func TestAStarIsVisionsWriteAndWritesThrough(t *testing.T) {
 		r := httptest.NewRequest(http.MethodPost, target, strings.NewReader(form.Encode()))
 		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		r.Header.Set("Remote-Email", "reader@zm.is")
-		r.Header.Set("Remote-Groups", "plug_koreader")
+		r.Header.Set("Remote-Groups", "plug_reader")
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, r)
 		return w
@@ -427,7 +427,7 @@ func TestReviewMovedToVision(t *testing.T) {
 	for method, want := range map[string]int{http.MethodGet: http.StatusFound, http.MethodPost: http.StatusSeeOther} {
 		r := httptest.NewRequest(method, "/review", nil)
 		r.Header.Set("Remote-Email", "reader@zm.is")
-		r.Header.Set("Remote-Groups", "plug_koreader")
+		r.Header.Set("Remote-Groups", "plug_reader")
 		w := httptest.NewRecorder()
 		a.serveReviewMoved(w, r)
 		if w.Code != want || !strings.HasSuffix(w.Header().Get("Location"), "/review") || !strings.Contains(w.Header().Get("Location"), "vision") {
@@ -456,7 +456,7 @@ func TestCardsExportReadsTheOldReviewState(t *testing.T) {
 		t.Fatalf("cards.export: %v", res)
 	}
 	if !cardsExportCapability().Internal {
-		t.Error("koreader.cards.export must be Internal")
+		t.Error("reader.cards.export must be Internal")
 	}
 }
 
@@ -478,7 +478,7 @@ func TestReadingSignals(t *testing.T) {
 	add("t2", day(2026, 10, 7, 21), 3600, "b")
 	evs = append(evs, ReadEvent{ID: "h1", Kind: KindHighlight, BookMD5: "a", Title: "a", StartTime: day(2026, 10, 7, 21), Text: "x"},
 		ReadEvent{ID: "h2", Kind: KindHighlight, BookMD5: "a", Title: "a", StartTime: day(2026, 8, 1, 21), Text: "too old"})
-	sigs := readingSignals(buildReadingIndex(evs, loc), loc, now, "https://koreader.zm.is")
+	sigs := readingSignals(buildReadingIndex(evs, loc), loc, now, "https://reader.zm.is")
 	if len(sigs) != 2 {
 		t.Fatalf("signals: %+v", sigs)
 	}
