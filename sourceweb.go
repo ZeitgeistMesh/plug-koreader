@@ -281,7 +281,7 @@ func catalogStatus(c *Catalog, refreshing bool) string {
 			parts = append(parts, fill(ui.UpdatedLine, "when", ago(time.Since(t))))
 		}
 		if c.Truncated {
-			parts = append(parts, fill(ui.TruncatedLine, "n", fmt.Sprint(maxCatalogLen)))
+			parts = append(parts, fill(ui.TruncatedLine, "n", fmt.Sprint(len(c.Entries))))
 		}
 	}
 	if len(parts) == 0 {

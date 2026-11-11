@@ -26,10 +26,8 @@ import (
 )
 
 const (
-	maxFeedBytes  = 8 << 20 // one feed page
-	maxRedirects  = 5
-	maxCatalogLen = 5000 // books kept per person
-	maxFeedPages  = 120  // requests per refresh
+	maxFeedBytes = 8 << 20 // one feed page
+	maxRedirects = 5
 )
 
 // BookFile is one way to get a book: its address on the server and its media type.
@@ -523,8 +521,8 @@ func (c *opdsClient) crawl(ctx context.Context, root string, rootFeed *feed) ([]
 			if e.ID == "" || e.Title == "" || seen[e.ID] {
 				continue
 			}
-			if len(out) >= maxCatalogLen {
-				truncated = true
+			if ctx.Err() != nil {
+				truncated = true // the time ran out: what was read so far is kept
 				return
 			}
 			seen[e.ID] = true
@@ -546,7 +544,7 @@ func (c *opdsClient) crawl(ctx context.Context, root string, rootFeed *feed) ([]
 		}
 		for next := f.Next; next != "" && !visited[next] && !truncated; {
 			visited[next] = true
-			if pages >= maxFeedPages {
+			if ctx.Err() != nil {
 				truncated = true
 				break
 			}
@@ -579,11 +577,14 @@ func (c *opdsClient) crawl(ctx context.Context, root string, rootFeed *feed) ([]
 	if err := walk(start, 0); err != nil && len(out) == 0 {
 		return nil, false, err
 	}
+	if ctx.Err() != nil {
+		truncated = true
+	}
 	return out, truncated, nil
 }
 
 func follow(ctx context.Context, c *opdsClient, href string, depth int, pages *int, walk func(*feed, int) error) error {
-	if *pages >= maxFeedPages {
+	if ctx.Err() != nil {
 		return nil
 	}
 	*pages++

@@ -44,6 +44,8 @@ type app struct {
 	// temporary cache of files fetched from it (catalog.go).
 	sources    dblib.DocStore[Source]
 	catalogs   dblib.DocStore[Catalog]
+	chunks     dblib.DocStore[CatalogChunk] // the list itself, in slices (catalog.go)
+	catMem     catCache
 	secrets    secretbox.Guard
 	files      *fileCache
 	refreshMu  sync.Mutex
@@ -128,9 +130,14 @@ func main() {
 		log.Fatalf("plug-reader: catalog store: %v", err)
 	}
 
+	chunks, err := dblib.NewPostgresDocStore[CatalogChunk](ctx, pg, collCatalogChunk)
+	if err != nil {
+		log.Fatalf("plug-reader: catalog chunk store: %v", err)
+	}
+
 	a := &app{items: items, webGroup: base.WebGroup,
 		devices: devices, pairCodes: pairCodes, events: events, tokens: tokens, cards: cards,
-		index: newIndexCache(), sources: sources, catalogs: catalogs,
+		index: newIndexCache(), sources: sources, catalogs: catalogs, chunks: chunks,
 		secrets: secretbox.GuardFromEnv("PLUG_READER_"), refreshing: map[string]bool{},
 		files: newFileCache(plugcfg.Env("PLUG_READER_CACHE_DIR", filepath.Join(os.TempDir(), "plug-reader-books")),
 			int64(plugcfg.EnvInt("PLUG_READER_CACHE_MAX_MB", 1024))<<20, 24*time.Hour, int64(plugcfg.EnvInt("PLUG_READER_CACHE_MAX_FILE_MB", 200))<<20),

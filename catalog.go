@@ -36,16 +36,27 @@ const (
 	capCatalogList    = "reader.catalog.list"
 	capCatalogRefresh = "reader.catalog.refresh"
 
+	collCatalogChunk = "reader_catalog_chunk"
+	// chunkLen is how many books one stored document holds. The list has no upper bound, so
+	// it is kept as many small documents and never as one that grows with the library.
+	chunkLen = 400
+
 	catalogMaxAge     = 6 * time.Hour
 	catalogFailRetry  = 15 * time.Minute
-	catalogCrawlLimit = 3 * time.Minute
+	catalogCrawlLimit = 20 * time.Minute
 )
 
-// Catalog is the saved list of one person's books.
+// Catalog is the saved list of one person's books. The saved document holds the facts about
+// the list and the number of chunks; Entries is filled when it is loaded. A document saved
+// before chunking still carries its entries inline, and is read as it is until the next
+// refresh replaces it.
 type Catalog struct {
 	ID          string         `json:"id"`
 	SourceURL   string         `json:"source_url"`
-	Entries     []CatalogEntry `json:"entries"`
+	Gen         string         `json:"gen,omitempty"`
+	Chunks      int            `json:"chunks,omitempty"`
+	Count       int            `json:"count,omitempty"`
+	Entries     []CatalogEntry `json:"entries,omitempty"`
 	RefreshedAt string         `json:"refreshed_at,omitempty"`
 	TriedAt     string         `json:"tried_at,omitempty"`
 	Error       string         `json:"error,omitempty"`
@@ -54,16 +65,114 @@ type Catalog struct {
 	Workspace   string         `json:"workspace,omitempty"`
 }
 
+// CatalogChunk is one stored slice of the list.
+type CatalogChunk struct {
+	ID      string         `json:"id"`
+	Entries []CatalogEntry `json:"entries"`
+}
+
+func chunkID(gen string, i int) string { return fmt.Sprintf("%s-%05d", gen, i) }
+
+// catCache keeps the assembled list of each person in memory, keyed by the generation it was
+// built from, so a page view does not read every chunk again.
+type catCache struct {
+	mu sync.Mutex
+	m  map[string]*Catalog
+}
+
 func (a *app) loadCatalog(ctx context.Context, tk dblib.TenantKey) *Catalog {
-	c, err := a.catalogs.Get(ctx, tk, catalogID)
-	if err != nil || c == nil {
+	meta, err := a.catalogs.Get(ctx, tk, catalogID)
+	if err != nil || meta == nil {
 		return nil
 	}
-	return c
+	if meta.Chunks == 0 || a.chunks == nil {
+		return meta
+	}
+	key := tk.Workspace + "|" + tk.Subject
+	a.catMem.mu.Lock()
+	hit := a.catMem.m[key]
+	a.catMem.mu.Unlock()
+	if hit != nil && hit.Gen == meta.Gen {
+		c := *meta
+		c.Entries = hit.Entries
+		return &c
+	}
+	entries := make([]CatalogEntry, 0, meta.Count)
+	for i := 0; i < meta.Chunks; i++ {
+		ch, err := a.chunks.Get(ctx, tk, chunkID(meta.Gen, i))
+		if err != nil || ch == nil {
+			return nil // half-written or lost: the page starts a refresh and shows what it has
+		}
+		entries = append(entries, ch.Entries...)
+	}
+	c := *meta
+	c.Entries = entries
+	a.catMem.mu.Lock()
+	if a.catMem.m == nil {
+		a.catMem.m = map[string]*Catalog{}
+	}
+	a.catMem.m[key] = &c
+	a.catMem.mu.Unlock()
+	return &c
+}
+
+// saveCatalog writes the chunks first and the document that names them last, so a reader
+// sees either the old list or the new one. Chunks of the replaced list go afterwards.
+func (a *app) saveCatalog(ctx context.Context, tk dblib.TenantKey, c *Catalog) error {
+	old, _ := a.catalogs.Get(ctx, tk, catalogID)
+	meta := *c
+	meta.Count = len(c.Entries)
+	if a.chunks == nil || len(c.Entries) == 0 {
+		meta.Gen, meta.Chunks = "", 0
+		if len(c.Entries) > 0 {
+			meta.Entries = c.Entries
+		}
+	} else {
+		if old != nil && old.Gen == c.Gen && c.Gen != "" {
+			meta.Gen = c.Gen // the list is the same one: nothing to rewrite
+			meta.Chunks = old.Chunks
+		} else {
+			meta.Gen = newID()
+			meta.Entries = nil
+			meta.Chunks = (len(c.Entries) + chunkLen - 1) / chunkLen
+			for i := 0; i < meta.Chunks; i++ {
+				ch := &CatalogChunk{ID: chunkID(meta.Gen, i), Entries: c.Entries[i*chunkLen : min((i+1)*chunkLen, len(c.Entries))]}
+				if err := a.chunks.Put(ctx, tk, ch.ID, ch); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	meta.Entries = nil
+	if a.chunks == nil || meta.Chunks == 0 {
+		meta.Entries = c.Entries
+	}
+	if err := a.catalogs.Put(ctx, tk, catalogID, &meta); err != nil {
+		return err
+	}
+	if old != nil && old.Gen != "" && old.Gen != meta.Gen {
+		a.dropChunks(ctx, tk, old)
+	}
+	return nil
+}
+
+func (a *app) dropChunks(ctx context.Context, tk dblib.TenantKey, c *Catalog) {
+	if a.chunks == nil || c == nil || c.Gen == "" {
+		return
+	}
+	for i := 0; i < c.Chunks; i++ {
+		_ = a.chunks.Delete(ctx, tk, chunkID(c.Gen, i))
+	}
 }
 
 func (a *app) dropCatalog(ctx context.Context, tk dblib.TenantKey) {
+	if old, _ := a.catalogs.Get(ctx, tk, catalogID); old != nil {
+		a.dropChunks(ctx, tk, old)
+	}
 	_ = a.catalogs.Delete(ctx, tk, catalogID)
+	a.catMem.mu.Lock()
+	delete(a.catMem.m, tk.Workspace+"|"+tk.Subject)
+	a.catMem.mu.Unlock()
 }
 
 // catalogDue says whether a refresh is worth starting: nothing saved, the saved list is for
@@ -123,6 +232,7 @@ func (a *app) refreshCatalog(ctx context.Context, tk dblib.TenantKey) {
 	next := &Catalog{ID: catalogID, SourceURL: s.URL, TriedAt: nowRFC(), Subject: tk.Subject, Workspace: tk.Workspace}
 	if old != nil && old.SourceURL == s.URL {
 		next.Entries, next.RefreshedAt, next.Truncated = old.Entries, old.RefreshedAt, old.Truncated
+		next.Gen, next.Chunks = old.Gen, old.Chunks
 	}
 	c, err := a.clientFor(ctx, tk.Subject, s)
 	if err == nil {
@@ -135,7 +245,11 @@ func (a *app) refreshCatalog(ctx context.Context, tk dblib.TenantKey) {
 				sort.SliceStable(entries, func(i, j int) bool {
 					return strings.ToLower(entries[i].Title) < strings.ToLower(entries[j].Title)
 				})
-				next.Entries, next.Truncated, next.RefreshedAt = entries, cut, nowRFC()
+				// A read that ran out of time never replaces a longer list with a shorter one.
+				if !(cut && old != nil && old.SourceURL == s.URL && len(old.Entries) > len(entries)) {
+					next.Entries, next.Truncated, next.RefreshedAt = entries, cut, nowRFC()
+					next.Gen = "" // a new list: written as new chunks
+				}
 			}
 		}
 	}
@@ -143,7 +257,10 @@ func (a *app) refreshCatalog(ctx context.Context, tk dblib.TenantKey) {
 		next.Error = err.Error()
 		log.Printf("plug-reader: catalog refresh for %s: %v", tk.Subject, err)
 	}
-	if perr := a.catalogs.Put(ctx, tk, catalogID, next); perr != nil {
+	// The crawl may have used all its time; saving has its own.
+	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+	defer cancel()
+	if perr := a.saveCatalog(sctx, tk, next); perr != nil {
 		log.Printf("plug-reader: catalog save for %s: %v", tk.Subject, perr)
 	}
 }
