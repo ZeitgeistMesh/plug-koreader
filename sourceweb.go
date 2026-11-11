@@ -7,6 +7,7 @@ package main
 // placeholder, and the page is never given the value.
 
 import (
+	"context"
 	"fmt"
 	"html"
 	"html/template"
@@ -20,6 +21,9 @@ import (
 	"xf/controller/pkg/webui"
 )
 
+// sourceTestBudget is the longest the Test button waits for the server.
+const sourceTestBudget = 20 * time.Second
+
 const (
 	settingsPath = "/settings"
 	booksPath    = "/books"
@@ -30,6 +34,16 @@ const (
 const readerBooksCSS = `
 .rd-cover{display:block;height:calc(var(--sp-6) + var(--sp-4));width:auto}
 .rd-status{margin-block:var(--sp-3)}
+.rd-form{display:flex;flex-direction:column;gap:var(--sp-3)}
+.rd-field{display:flex;flex-direction:column;gap:var(--sp-1)}
+.rd-field label{margin:0}
+.rd-field .hint{margin:0;font-size:.78rem}
+.rd-result{display:flex;align-items:center;gap:var(--sp-2);margin:0;min-height:var(--control-h)}
+.rd-result.ok{color:var(--ok,var(--accent))}
+.rd-result.bad{color:var(--danger-text)}
+.rd-result .rd-wait{display:none}
+.rd-result.htmx-request .rd-wait{display:inline}
+.rd-result.htmx-request .rd-msg{display:none}
 `
 
 // fill replaces {name} markers in a copy string.
@@ -65,6 +79,7 @@ func (a *app) serveSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := a.page(settingsPath)
+	p.CSS += readerBooksCSS
 	p.StartFor(w, r, ui.SettingsTitle)
 	fmt.Fprint(w, a.settingsBody(r, tk, note, bad))
 	p.End(w)
@@ -79,7 +94,10 @@ func (a *app) settingsAction(r *http.Request, caller string) (string, bool) {
 	}
 	switch r.FormValue("do") {
 	case "test":
-		res := a.handleSourceTest(r.Context(), caller, tk, meta)
+		// A test waits on the person's own server, so it is bounded: the answer is always a line on the page.
+		ctx, cancel := context.WithTimeout(r.Context(), sourceTestBudget)
+		defer cancel()
+		res := a.handleSourceTest(ctx, caller, tk, meta)
 		if e, _ := res["error"].(string); e != "" {
 			return e, true
 		}
@@ -118,28 +136,27 @@ func (a *app) settingsBody(r *http.Request, tk dblib.TenantKey, note string, bad
 			passPlaceholder = ui.PlaceholderPasswordSet
 		}
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, `<div id="%s">`, settingsRoot)
-	line := note
+	if r.Method == http.MethodPost && r.FormValue("do") == "test" {
+		// A test never changes what is saved, so the form keeps what the person typed.
+		url, user = r.FormValue("url"), r.FormValue("username")
+	}
+	line, state := note, "ok"
 	switch {
 	case line != "":
-	case s == nil:
-		line = ui.StatusNone
-	case s.TestError != "":
-		line = s.TestError
-		bad = true
-	}
-	if line != "" {
-		cls := "hint"
 		if bad {
-			cls = "hint error"
+			state = "bad"
 		}
-		fmt.Fprintf(&b, `<p class="%s rd-status" role="status">%s</p>`, cls, html.EscapeString(line))
+	case s == nil:
+		line, state = ui.StatusNone, ""
+	case s.TestError != "":
+		line, state = s.TestError, "bad"
 	}
+	var b strings.Builder
+	fmt.Fprintf(&b, `<div id="%s">`, settingsRoot)
 	field := func(id, label, control, help string) {
-		fmt.Fprintf(&b, `<div><label for="%s">%s</label>%s<p class="hint">%s</p></div>`, id, html.EscapeString(label), control, html.EscapeString(help))
+		fmt.Fprintf(&b, `<div class="rd-field"><label for="%s">%s</label>%s<p class="hint">%s</p></div>`, id, html.EscapeString(label), control, html.EscapeString(help))
 	}
-	fmt.Fprintf(&b, `<form class="form-grid" method="post" action="%s" hx-post="%s" hx-target="#%s" hx-select="#%s" hx-swap="outerHTML">`,
+	fmt.Fprintf(&b, `<form class="rd-form" method="post" action="%s" hx-post="%s" hx-target="#%s" hx-select="#%s" hx-swap="outerHTML">`,
 		settingsPath, settingsPath, settingsRoot, settingsRoot)
 	field("rd-url", ui.LabelURL, fmt.Sprintf(`<input id="rd-url" type="text" name="url" value="%s" maxlength="300" placeholder="%s" autocomplete="off" required>`,
 		html.EscapeString(url), html.EscapeString(ui.PlaceholderURL)), ui.HintURL)
@@ -147,19 +164,28 @@ func (a *app) settingsBody(r *http.Request, tk dblib.TenantKey, note string, bad
 		html.EscapeString(user)), ui.HintUser)
 	field("rd-pass", ui.LabelPassword, fmt.Sprintf(`<input id="rd-pass" type="password" name="password" maxlength="400" autocomplete="new-password" placeholder="%s">`,
 		html.EscapeString(passPlaceholder)), ui.HintPassword)
-	btns := []string{
-		string(webui.IconTextButton("fa-solid fa-plug-circle-check", ui.BtnTest, webui.BtnOpts{Kind: "secondary", Type: "submit", Attrs: `name="do" value="test"`})),
-		string(webui.IconTextButton("fa-solid fa-floppy-disk", ui.BtnSave, webui.BtnOpts{Kind: "primary", Type: "submit", Attrs: `name="do" value="save"`})),
+	// Test swaps ONLY the result line under the buttons, so what is typed stays and the answer
+	// appears where the finger is. Without scripts it is an ordinary form post.
+	testAttrs := fmt.Sprintf(`name="do" value="test" hx-post="%s" hx-include="closest form" hx-vals='{"do":"test"}' hx-target="#rd-result" hx-select="#rd-result" hx-swap="outerHTML" hx-indicator="#rd-result"`, settingsPath)
+	btns := []template.HTML{
+		webui.IconTextButton("fa-solid fa-plug-circle-check", ui.BtnTest, webui.BtnOpts{Kind: "secondary", Type: "submit", Attrs: testAttrs}),
+		webui.IconTextButton("fa-solid fa-floppy-disk", ui.BtnSave, webui.BtnOpts{Kind: "primary", Type: "submit", Attrs: `name="do" value="save"`}),
 	}
 	if s != nil {
-		btns = append(btns, string(webui.IconTextButton("fa-solid fa-link-slash", ui.BtnDisconnect,
-			webui.BtnOpts{Kind: "danger", Type: "submit", Attrs: `name="do" value="delete" formnovalidate`})))
+		btns = append(btns, webui.IconTextButton("fa-solid fa-link-slash", ui.BtnDisconnect,
+			webui.BtnOpts{Kind: "danger", Type: "submit", Attrs: `name="do" value="delete" formnovalidate`}))
 	}
-	b.WriteString(`<div>`)
-	for _, x := range btns {
-		b.WriteString(x)
+	b.WriteString(string(webui.ButtonRow(btns...)))
+	icon := ""
+	switch state {
+	case "ok":
+		icon = `<i class="fa-solid fa-circle-check" aria-hidden="true"></i>`
+	case "bad":
+		icon = `<i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>`
 	}
-	b.WriteString(`</div></form></div>`)
+	fmt.Fprintf(&b, `<p id="rd-result" class="rd-result %s" role="status" aria-live="polite"><span class="rd-wait">%s</span><span class="rd-msg">%s%s</span></p>`,
+		state, html.EscapeString(ui.StatusTesting), icon, html.EscapeString(line))
+	b.WriteString(`</form></div>`)
 	return b.String()
 }
 
@@ -169,7 +195,6 @@ func catalogListView() webui.ListView {
 	return webui.ListView{
 		Action:            booksPath,
 		RootID:            "lv-catalog",
-		Title:             ui.BooksTitle,
 		SearchPlaceholder: ui.SearchPlaceholder,
 		EmptyText:         ui.EmptyNoneMatch,
 		PageSizes:         []int{25, 50, 100},

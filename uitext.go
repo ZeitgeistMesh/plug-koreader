@@ -9,7 +9,7 @@ type uiText struct {
 	LabelURL, LabelUser, LabelPassword                                         string
 	PlaceholderURL, HintURL, HintUser, PlaceholderPasswordSet, HintPassword    string
 	BtnTest, BtnSave, BtnDisconnect                                            string
-	StatusNone, StatusOK, StatusSavedOK, StatusSavedFailed, StatusDisconnected string
+	StatusNone, StatusTesting, StatusOK, StatusSavedOK, StatusSavedFailed, StatusDisconnected string
 
 	SearchPlaceholder, EmptyNotConnected, EmptyLoading, EmptyNoneMatch, EmptyNoneAtAll string
 	UpdatedLine, ReadingLine, FailedLine, TruncatedLine                                string
@@ -45,6 +45,7 @@ var ui = uiText{
 	BtnDisconnect: "Disconnect",
 
 	StatusNone:         "No book server connected.",
+	StatusTesting:      "Testing…",
 	StatusOK:           "Connected to {server}.",
 	StatusSavedOK:      "Saved. Connected to {server}.",
 	StatusSavedFailed:  "Saved, but the test failed. {problem}",

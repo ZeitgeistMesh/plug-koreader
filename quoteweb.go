@@ -118,7 +118,6 @@ func booksListView() webui.ListView {
 	return webui.ListView{
 		Action:            readingPath,
 		RootID:            "lv-books",
-		Title:             "Books",
 		SearchPlaceholder: "Search your books…",
 		EmptyText:         "No book matches that.",
 		PageSizes:         []int{25, 50, 100},

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"xf/controller/pkg/secretbox"
+	"xf/controller/pkg/webui"
 )
 
 // calibreWeb is a stand-in for a Calibre-Web OPDS server: Basic auth on everything, a root of
@@ -495,3 +496,46 @@ func TestTailnetNeedsTheRole(t *testing.T) {
 	}
 }
 
+
+// The Test button answers on the page, right under the buttons: a line that says ok or failed with
+// the reason, swapped alone so what was typed stays; the form keeps the typed address after a test; and
+// no list page carries a title the nav already says.
+func TestTheTestButtonAnswersInlineUnderTheButtons(t *testing.T) {
+	a := testApp()
+	tk := tenant("m@zm.is")
+	post := func() *http.Request {
+		r := httptest.NewRequest(http.MethodPost, "/settings", strings.NewReader("do=test&url=https%3A%2F%2Ftyped.example.com&username=typed"))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		_ = r.ParseForm()
+		return r
+	}
+	body := a.settingsBody(post(), tk, "Could not reach your server, so check the address and try again.", true)
+	if !strings.Contains(body, `value="https://typed.example.com"`) || !strings.Contains(body, `value="typed"`) {
+		t.Errorf("a test threw away what was typed: %s", body)
+	}
+	i, j := strings.Index(body, `field-row btn-row`), strings.Index(body, `id="rd-result"`)
+	if i < 0 || j < i {
+		t.Fatalf("the result line is not under the buttons (buttons at %d, result at %d)", i, j)
+	}
+	res := body[j:]
+	for _, want := range []string{`rd-result bad`, `role="status"`, `fa-circle-xmark`, "Could not reach your server", ui.StatusTesting} {
+		if !strings.Contains(res, want) {
+			t.Errorf("the result line lacks %q: %s", want, res)
+		}
+	}
+	if !strings.Contains(body, `hx-target="#rd-result"`) || !strings.Contains(body, `hx-indicator="#rd-result"`) {
+		t.Error("the Test button does not swap just the result line")
+	}
+	ok := a.settingsBody(post(), tk, "Connected to Calibre.", false)
+	if !strings.Contains(ok, `rd-result ok`) || !strings.Contains(ok, `fa-circle-check`) {
+		t.Errorf("a good test does not read as ok: %s", ok)
+	}
+	if sourceTestBudget <= 0 || sourceTestBudget > 30*time.Second {
+		t.Errorf("the test is not bounded: %v", sourceTestBudget)
+	}
+	for name, v := range map[string]webui.ListView{"books": booksListView(), "catalog": catalogListView()} {
+		if strings.TrimSpace(v.Title) != "" {
+			t.Errorf("the %s list has a title the nav already gives", name)
+		}
+	}
+}

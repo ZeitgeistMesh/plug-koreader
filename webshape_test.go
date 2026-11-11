@@ -134,6 +134,7 @@ func TestNoTwoControlsRenderWithoutASpacingContainer(t *testing.T) {
 	}{
 		{"/addon", a.serveAddon},
 		{"/pair", a.servePair},
+		{"/settings", a.serveSettings},
 	} {
 		body := mainOf(t, tc.path, gatedGet(t, a, tc.h, tc.path))
 		if got := unspacedButtonPairs(body); len(got) > 0 {
