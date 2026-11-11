@@ -100,6 +100,8 @@ type ingestRequest struct {
 	// the server's own count of that book's annotations (see bookReceipt), because the
 	// book in hand is the one the reader is checking on when they press Sync.
 	CurrentBook string `json:"current_book"`
+	// Position is where the device is in the book it has open (progress.go).
+	Position *devicePosition `json:"position,omitempty"`
 	Events    eventBatch `json:"events"`
 }
 
@@ -155,6 +157,9 @@ type ingestReply struct {
 	ReadingNew         int `json:"reading_new"`
 	// Book is the receipt for CurrentBook; absent when the device named none.
 	Book *bookReceipt `json:"book,omitempty"`
+	// Position is set only when the server holds a newer place in the open book, made
+	// somewhere else; the device offers to go there.
+	Position *devicePosition `json:"position,omitempty"`
 	// HighWater is the largest StartTime IN THIS BATCH (stored or already held). The
 	// device advances its cursor to what the SERVER acknowledged, never to what it read —
 	// an acknowledgement that never arrived must cost a resend, not a gap.
@@ -235,6 +240,7 @@ func (a *app) serveIngest(w http.ResponseWriter, r *http.Request) {
 	res := a.storeEvents(r.Context(), tk, dev, req.Events)
 	res.Device = dev.Name
 	res.Book = a.receiptFor(r.Context(), tk, req.CurrentBook, req.Events)
+	res.Position = a.syncPosition(r.Context(), tk, dev, req.Position)
 
 	// THE AGGREGATE IS NOW STALE. This is the only writer of events, so this is the only
 	// place that has to say so — which is what makes the cache in summary.go a real

@@ -46,6 +46,7 @@ type app struct {
 	catalogs   dblib.DocStore[Catalog]
 	chunks     dblib.DocStore[CatalogChunk] // the list itself, in slices (catalog.go)
 	catMem     catCache
+	progress   dblib.DocStore[Progress] // where a person is in each book (progress.go)
 	secrets    secretbox.Guard
 	files      *fileCache
 	refreshMu  sync.Mutex
@@ -135,9 +136,14 @@ func main() {
 		log.Fatalf("plug-reader: catalog chunk store: %v", err)
 	}
 
+	progress, err := dblib.NewPostgresDocStore[Progress](ctx, pg, collProgress)
+	if err != nil {
+		log.Fatalf("plug-reader: progress store: %v", err)
+	}
+
 	a := &app{items: items, webGroup: base.WebGroup,
 		devices: devices, pairCodes: pairCodes, events: events, tokens: tokens, cards: cards,
-		index: newIndexCache(), sources: sources, catalogs: catalogs, chunks: chunks,
+		index: newIndexCache(), sources: sources, catalogs: catalogs, chunks: chunks, progress: progress,
 		secrets: secretbox.GuardFromEnv("PLUG_READER_"), refreshing: map[string]bool{},
 		files: newFileCache(plugcfg.Env("PLUG_READER_CACHE_DIR", filepath.Join(os.TempDir(), "plug-reader-books")),
 			int64(plugcfg.EnvInt("PLUG_READER_CACHE_MAX_MB", 1024))<<20, 24*time.Hour, int64(plugcfg.EnvInt("PLUG_READER_CACHE_MAX_FILE_MB", 200))<<20),
@@ -179,6 +185,10 @@ func main() {
 			mux.HandleFunc(booksPath, a.serveCatalog)
 			mux.HandleFunc(booksPath+"/file", a.serveBookFile)
 			mux.HandleFunc(booksPath+"/cover", a.serveBookCover)
+			mux.HandleFunc(booksPath+"/read", a.serveBookRead)
+			mux.HandleFunc(booksPath+"/read/res", a.serveBookRes)
+			mux.HandleFunc(booksPath+"/read/progress", a.serveReadProgress)
+			mux.HandleFunc(booksPath+"/read/highlight", a.serveReadHighlight)
 			mux.HandleFunc(settingsPath, a.serveSettings)
 			mux.HandleFunc(readingPath, a.serveBooks)
 			mux.HandleFunc(readingPath+".json", a.serveBooksExport)
@@ -275,7 +285,7 @@ func (a *app) manifest(base plugcfg.Base) xats.Manifest {
 		// and the required scopes on each. That is what mesh.verify checks, and
 		// verify_contract_test.go asserts it here so a drift is a failing test rather
 		// than a failed release.
-		Capabilities: append(append(append(a.item.Capabilities(), sourceCapabilities()...), catalogCapabilities()...), pastListCapability(), readingSessionsCapability(), quoteListCapability(), quoteExportCapability(), cardsExportCapability(), lifeGoalsCapability()), // pastlist.go, quotelist.go, quoteexport.go
+		Capabilities: append(append(append(append(a.item.Capabilities(), sourceCapabilities()...), catalogCapabilities()...), progressCapabilities()...), pastListCapability(), readingSessionsCapability(), quoteListCapability(), quoteExportCapability(), cardsExportCapability(), lifeGoalsCapability()), // pastlist.go, quotelist.go, quoteexport.go
 		Entities:     []xats.EntityDecl{a.item.EntityDecl()},
 	}
 }
@@ -299,6 +309,12 @@ func (a *app) dispatch(ctx context.Context, node string, meta map[string]any) ma
 		return a.handleCatalogList(ctx, caller, tk, meta)
 	case capCatalogRefresh:
 		return a.handleCatalogRefresh(ctx, caller, tk, meta)
+	case capProgressGet:
+		return a.handleProgressGet(ctx, caller, tk, meta)
+	case capProgressSet:
+		return a.handleProgressSet(ctx, caller, tk, meta)
+	case capHighlightAdd:
+		return a.handleHighlightAdd(ctx, caller, tk, meta)
 	}
 	if node == capReadingSessions {
 		return a.handleReadingSessions(ctx, strings.TrimSpace(plugrun.Str(meta, "caller_user_id")), tk, meta)

@@ -204,6 +204,10 @@ func catalogRows(entries []CatalogEntry, q webui.ListQuery) ([]webui.Row, int) {
 			cover = template.HTML(fmt.Sprintf(`<img class="rd-cover" loading="lazy" alt="" src="%s/cover?id=%s">`, booksPath, key))
 		}
 		var fm []string
+		if _, ok := epubFile(&e); ok {
+			fm = append(fm, fmt.Sprintf(`<a href="%s/read?id=%s" hx-boost="false" data-tip="%s">%s</a>`,
+				booksPath, key, html.EscapeString(ui.ReadTip), html.EscapeString(ui.ReadLink)))
+		}
 		for i, f := range e.Files {
 			fm = append(fm, fmt.Sprintf(`<a href="%s/file?id=%s&amp;f=%d" hx-boost="false" data-tip="%s">%s</a>`,
 				booksPath, key, i, html.EscapeString(ui.DownloadTitle), html.EscapeString(strings.ToUpper(fileExt(f.Type)))))

@@ -19,6 +19,11 @@ type uiText struct {
 	ErrAgentOnlyYou, ErrDemo, ErrAuth, ErrUnreachable, ErrAddressBlocked, ErrRedirectOff    string
 	ErrRedirects, ErrStatus, ErrNotCatalog, ErrNoCatalogFound, ErrTooLarge, ErrFileBig      string
 	ErrFetchBook                                                                            string
+
+	// The browser reader (readweb.go). Written by Opus.
+	ReadLink, ReadTip, ContentsHeading, ChapterFallback, Prev, Next             string
+	SaveQuote, QuoteSaved, QuoteFailed, PercentRead                             string
+	ErrNotEpub, ErrOpen, ErrNoChapter                                           string
 }
 
 var ui = uiText{
@@ -53,7 +58,7 @@ var ui = uiText{
 	UpdatedLine:       "Updated {when}",
 	ReadingLine:       "Updating…",
 	FailedLine:        "Could not update, so this is the last list. {problem}",
-	TruncatedLine:     "Showing the first {n} books.",
+	TruncatedLine:     "Time ran out after {n} books. The next refresh will try again.",
 	ColTitle:          "Title",
 	ColAuthor:         "Author",
 	ColFormats:        "Formats",
@@ -80,5 +85,18 @@ var ui = uiText{
 	ErrTooLarge:       "The server's catalog page is too large to read.",
 	ErrFileBig:        "That book file is too large to download here.",
 	ErrFetchBook:      "Could not get that book from your server ({why}), so try again later.",
-}
 
+	ReadLink:        "Read",
+	ReadTip:         "Open this book in the browser",
+	ContentsHeading: "Contents",
+	ChapterFallback: "Chapter {n}",
+	Prev:            "Previous",
+	Next:            "Next",
+	SaveQuote:       "Save quote",
+	QuoteSaved:      "Quote saved",
+	QuoteFailed:     "Quote not saved. Try again.",
+	PercentRead:     "{percent}% read",
+	ErrNotEpub:      "Reader can't open this format yet.",
+	ErrOpen:         "Reader couldn't open this book: {why}",
+	ErrNoChapter:    "This chapter doesn't exist.",
+}

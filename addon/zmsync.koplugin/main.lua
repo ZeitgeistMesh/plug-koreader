@@ -26,7 +26,9 @@ gap — and because every event id is derived from its own content, a resend is 
 ]]
 
 local DataStorage = require("datastorage")
+local ConfirmBox = require("ui/widget/confirmbox")
 local Dispatcher = require("dispatcher")
+local Event = require("ui/event")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 local UIManager = require("ui/uimanager")
@@ -789,6 +791,77 @@ function ZmSync:openBook()
     return { md5 = bmd5, title = bookTitle({ props.title, stats.title, props.display_title }, ui.document.file) }
 end
 
+-- ── reading position, both ways ─────────────────────────────────────────────
+--
+-- The server keeps one place per book and the newest change wins. This device sends the
+-- percentage it is at and says whether it MOVED since the last sync; a book merely opened
+-- is reported as not moved, so it never overwrites a place made in the browser. When the
+-- server holds a newer place from elsewhere it says so in the reply and the reader is asked
+-- before the page changes.
+
+-- positionNow is how far through the open book the reader is, 0 to 100, or nil.
+function ZmSync:positionNow()
+    local ui = self.ui
+    if not (ui and ui.document) then return nil end
+    local ok, pos = pcall(function()
+        local total, cur = ui.document:getPageCount(), ui.document:getCurrentPage()
+        if not total or total < 1 or not cur then return nil end
+        return 100 * cur / total
+    end)
+    if ok then return pos end
+    return nil
+end
+
+function ZmSync:knownPositions()
+    local known = self.settings:readSetting("positions")
+    if type(known) ~= "table" then known = {} end
+    return known
+end
+
+-- positionToSend is what to put in the sync request for the open book, or nil.
+function ZmSync:positionToSend(book)
+    if not book then return nil end
+    local pos = self:positionNow()
+    if not pos then return nil end
+    local k = self:knownPositions()[book.md5]
+    if type(k) ~= "table" then
+        return { book = book.md5, percent = pos, at = 0, changed = false }
+    end
+    if math.abs((k.percent or 0) - pos) >= 1 then
+        return { book = book.md5, percent = pos, at = os.time(), changed = true }
+    end
+    return { book = book.md5, percent = pos, at = k.at or 0, changed = false }
+end
+
+-- afterPosition records what the server now agrees with, and offers a newer place.
+function ZmSync:afterPosition(book, sent, res)
+    if not (book and sent) then return end
+    local known = self:knownPositions()
+    known[book.md5] = { percent = sent.percent, at = sent.at }
+    local there = res and res.position
+    if type(there) == "table" and there.book == book.md5 and tonumber(there.percent) and tonumber(there.at) then
+        local pct, at = tonumber(there.percent), tonumber(there.at)
+        local from = type(there.device) == "string" and there.device ~= "" and there.device or "other device"
+        known[book.md5] = { percent = sent.percent, at = at }
+        UIManager:show(ConfirmBox:new{
+            text = T(_("Your %1 is further on, at %2%."), from, string.format("%.0f", pct)),
+            ok_text = _("Go there"),
+            cancel_text = _("Stay here"),
+            ok_callback = function()
+                local total = self.ui and self.ui.document and self.ui.document:getPageCount()
+                if total and total > 0 then
+                    local page = math.max(1, math.min(total, math.floor(pct / 100 * total + 0.5)))
+                    pcall(function() self.ui:handleEvent(Event:new("GotoPage", page)) end)
+                end
+                known[book.md5] = { percent = pct, at = at }
+                self.settings:saveSetting("positions", known)
+                self.settings:flush()
+            end,
+        })
+    end
+    self.settings:saveSetting("positions", known)
+end
+
 -- whenText is a time the reader recognises at a glance: "today 23:12", "yesterday 23:12",
 -- or a date for anything older.
 local function whenText(t)
@@ -919,9 +992,10 @@ function ZmSync:syncNow(interactive, continuing, origin)
     -- Riding the first request costs exactly the same one copy per chain and owes nothing
     -- to how the reading backfill goes. The quotes are what the reader is waiting to see;
     -- they should not be behind seven years of page rows in the queue.
-    local annotations, captureReport, book = {}, "", nil
+    local annotations, captureReport, book, sentPosition = {}, "", nil, nil
     if not continuing then
         book = self:openBook()
+        sentPosition = self:positionToSend(book)
         local _sidecars
         annotations, _sidecars, captureReport = self:collectAnnotations()
         for _, a in ipairs(annotations) do
@@ -939,6 +1013,7 @@ function ZmSync:syncNow(interactive, continuing, origin)
         utc_offset = self:utcOffset(),
         capture_report = captureReport,
         current_book = book and book.md5 or nil,
+        position = sentPosition,
         events = asArray(events),
     }, self:token())
 
@@ -963,6 +1038,7 @@ function ZmSync:syncNow(interactive, continuing, origin)
     -- history. Holding the floor HERE is what lets the server stay honest about what one
     -- batch actually proved; the alternative, a server-side maximum over everything
     -- stored, is what silently skipped ~16,000 rows of this reader's history.
+    self:afterPosition(book, sentPosition, res)
     local ack = tonumber(res.high_water)
     if ack and ack > (tonumber(self.settings:readSetting("high_water")) or 0) then
         self.settings:saveSetting("high_water", ack)

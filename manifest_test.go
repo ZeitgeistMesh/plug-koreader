@@ -28,6 +28,7 @@ func testApp() *app {
 		sources:    dblib.NewFakeDocStore[Source](),
 		catalogs:   dblib.NewFakeDocStore[Catalog](),
 		chunks:     dblib.NewFakeDocStore[CatalogChunk](),
+		progress:   dblib.NewFakeDocStore[Progress](),
 		secrets:    secretbox.Guard{Box: secretbox.New("a test key"), Name: "TEST_"},
 		refreshing: map[string]bool{},
 		files:      newFileCache(os.TempDir()+"/plug-reader-test-"+newID(), 1<<20, time.Hour, 1<<16),
