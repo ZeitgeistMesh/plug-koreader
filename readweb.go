@@ -49,6 +49,7 @@ function fit(){var s=document.getElementById('rd-shell');if(!s)return;s.style.se
 var top=s.getBoundingClientRect().top+window.scrollY,below=document.documentElement.scrollHeight-top-s.offsetHeight;
 s.style.setProperty('--rd-chrome',Math.max(top+below,0)+'px');}
 if(window.__rdFit)window.removeEventListener('resize',window.__rdFit);window.__rdFit=fit;window.addEventListener('resize',fit);fit();
+if(document.readyState!=='complete')window.addEventListener('load',fit);setTimeout(fit,0);
 var p0=parseFloat(d.p0),p1=parseFloat(d.p1),frac=parseFloat(d.frac)||0,timer=null,lastSent=-1;
 function room(){return Math.max(t.scrollHeight-t.clientHeight,1);}
 function now(){return Math.min(Math.max(t.scrollTop/room(),0),1);}
