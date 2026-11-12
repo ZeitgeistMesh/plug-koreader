@@ -177,6 +177,7 @@ func main() {
 			// The human half, behind the ordinary gate.
 			mux.HandleFunc("/", a.serveReadingRoot)
 			mux.HandleFunc("/day", a.serveDay)
+			mux.HandleFunc("/calendar", a.serveCalendar)
 			// /quotes, /quote and the browser's action route: the shared quote
 			// browser (quotebrowse.go), mounted rather than written here.
 			a.quoteView().Mount(mux, a.webGate, a.page)
@@ -250,6 +251,7 @@ func nav(active string) []flowweb.NavLink {
 	links := []flowweb.NavLink{
 		// NO "Reading" ENTRY: it pointed at "/" (the reading calendar), the page the brand
 		// already links to.
+		{Label: calTitle, URL: "/calendar", Icon: "fa-solid fa-calendar-days"},
 		{Label: "Books", URL: booksPath, Icon: "fa-solid fa-book"},
 		{Label: "Read", URL: readingPath, Icon: "fa-solid fa-book-open-reader"},
 		{Label: "Quotes", URL: "/quotes", Icon: "fa-solid fa-quote-left"},
@@ -285,7 +287,7 @@ func (a *app) manifest(base plugcfg.Base) xats.Manifest {
 		// and the required scopes on each. That is what mesh.verify checks, and
 		// verify_contract_test.go asserts it here so a drift is a failing test rather
 		// than a failed release.
-		Capabilities: append(append(append(append(a.item.Capabilities(), sourceCapabilities()...), catalogCapabilities()...), progressCapabilities()...), pastListCapability(), readingSessionsCapability(), quoteListCapability(), quoteExportCapability(), cardsExportCapability(), lifeGoalsCapability()), // pastlist.go, quotelist.go, quoteexport.go
+		Capabilities: append(append(append(append(a.item.Capabilities(), sourceCapabilities()...), catalogCapabilities()...), progressCapabilities()...), pastListCapability(), readingSessionsCapability(), calendarCapability(), quoteListCapability(), quoteExportCapability(), cardsExportCapability(), lifeGoalsCapability()), // pastlist.go, quotelist.go, quoteexport.go
 		Entities:     []xats.EntityDecl{a.item.EntityDecl()},
 	}
 }
@@ -315,6 +317,9 @@ func (a *app) dispatch(ctx context.Context, node string, meta map[string]any) ma
 		return a.handleProgressSet(ctx, caller, tk, meta)
 	case capHighlightAdd:
 		return a.handleHighlightAdd(ctx, caller, tk, meta)
+	}
+	if node == capCalendarGet {
+		return a.handleCalendarGet(ctx, caller, tk, meta)
 	}
 	if node == capReadingSessions {
 		return a.handleReadingSessions(ctx, strings.TrimSpace(plugrun.Str(meta, "caller_user_id")), tk, meta)
