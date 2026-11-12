@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"time"
 
@@ -93,10 +94,45 @@ func (a *app) quoteView() quotebrowser.Config {
 		// /quote?id=<event id> links predate Refs; a bare id is a koreader highlight.
 		DefaultSource: sourceKoreader,
 		BooksPath:     readingPath,
+		BookLink:      a.bookReadLink,
 		ListTitle:     "Quotes", ReaderTitle: "Quote", ListLabel: "Every quote", SourceLabel: "Book",
 		SearchPlaceholder: "Search your highlights…",
 		EmptyTitle:        "No quotes yet",
 		EmptyText: "Highlights are read from each book's sidecar on the device. Sync from ☰ → Tools → " +
 			"Zeitgeist reading sync → Sync now and they will appear here.",
 	}
+}
+
+// bookReadLink is where a quoted book opens in the browser: the catalog entry whose title is the
+// highlight's book (the device and the book server name it the same, case and spacing aside) and
+// that has an EPUB. "" when the book is not on the connected server, or two entries share the name.
+func (a *app) bookReadLink(ctx context.Context, caller, _, title string) string {
+	want := normTitle(title)
+	if want == "" {
+		return ""
+	}
+	var found *CatalogEntry
+	c := a.loadCatalog(ctx, tenant(caller))
+	if c == nil {
+		return ""
+	}
+	for i := range c.Entries {
+		e := &c.Entries[i]
+		if _, ok := epubFile(e); !ok || normTitle(displayTitle(e.Title)) != want {
+			continue
+		}
+		if found != nil {
+			return ""
+		}
+		found = e
+	}
+	if found == nil {
+		return ""
+	}
+	return booksPath + "/read?id=" + url.QueryEscape(entryKey(found.ID))
+}
+
+// normTitle compares titles without caring about case or runs of spaces.
+func normTitle(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(displayTitle(s)), " "))
 }

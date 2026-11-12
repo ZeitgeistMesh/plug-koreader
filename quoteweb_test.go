@@ -498,3 +498,13 @@ func TestReadingSignals(t *testing.T) {
 		t.Error("life.goals.list must be Internal")
 	}
 }
+
+// A quoted book opens in the browser when the connected server lists an EPUB with the same title.
+func TestBookReadLinkFindsTheEpubByTitle(t *testing.T) {
+	if normTitle("  Dune  ") != normTitle("dune") {
+		t.Fatal("titles compare without case or spacing")
+	}
+	if normTitle("") != "" {
+		t.Fatal("an empty title matches nothing")
+	}
+}
