@@ -197,6 +197,8 @@ func buildMonthCal(idx *readingIndex, loc *time.Location, month, now time.Time) 
 // Copy, written by Opus.
 const (
 	calTitle      = "Calendar"
+	calMonthView  = "Month"
+	calYearView   = "Year"
 	calPrevMonth  = "Previous month"
 	calNextMonth  = "Next month"
 	calPrevYear   = "Previous year"
@@ -220,6 +222,7 @@ func renderMonthCal(c monthCal) template.HTML {
 	fmt.Fprintf(&b, `<span class="ko-calmonth">%s</span>`, c.Month)
 	nav("fa-solid fa-angle-right", calNextMonth, c.Next)
 	nav("fa-solid fa-angles-right", calNextYear, c.NextY)
+	b.WriteString(string(webui.IconTextButton("fa-solid fa-table-cells", calYearView, webui.BtnOpts{Size: "sm", Href: "/"})))
 	b.WriteString(`</div>`)
 	if c.Books == 0 {
 		fmt.Fprintf(&b, `<p class="muted">%s</p>`, calEmptyMonth)

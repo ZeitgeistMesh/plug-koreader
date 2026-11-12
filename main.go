@@ -251,7 +251,6 @@ func nav(active string) []flowweb.NavLink {
 	links := []flowweb.NavLink{
 		// NO "Reading" ENTRY: it pointed at "/" (the reading calendar), the page the brand
 		// already links to.
-		{Label: calTitle, URL: "/calendar", Icon: "fa-solid fa-calendar-days"},
 		{Label: "Books", URL: booksPath, Icon: "fa-solid fa-book"},
 		{Label: "Read", URL: readingPath, Icon: "fa-solid fa-book-open-reader"},
 		{Label: "Quotes", URL: "/quotes", Icon: "fa-solid fa-quote-left"},

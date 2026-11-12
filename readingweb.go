@@ -227,6 +227,7 @@ func yearNav(years []int, active int) template.HTML {
 		b.WriteString(string(webui.IconTextButton("", strconv.Itoa(y),
 			webui.BtnOpts{Kind: kind, Size: "sm", Href: "/?year=" + strconv.Itoa(y)})))
 	}
+	b.WriteString(string(webui.IconTextButton("fa-solid fa-calendar-days", calMonthView, webui.BtnOpts{Size: "sm", Href: "/calendar"})))
 	b.WriteString(`</div>`)
 	return template.HTML(b.String())
 }
