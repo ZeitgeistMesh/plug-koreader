@@ -25,6 +25,8 @@ import (
 )
 
 const readerReadCSS = `
+.rd-shell{display:flex;flex-direction:column;height:calc(100dvh - var(--rd-chrome, 19rem));min-height:16rem}
+.rd-shell>.rd-text{flex:1 1 auto;min-height:0;overflow-y:auto;width:100%;box-sizing:border-box;padding-inline:var(--sp-3)}
 .rd-bar{display:flex;flex-wrap:wrap;gap:var(--sp-3);align-items:center;justify-content:space-between;margin-block:var(--sp-3)}
 .rd-bar .rd-pos{min-width:calc(var(--sp-6) * 3)}
 .rd-toc{margin-block:var(--sp-3)}
@@ -43,30 +45,46 @@ const readerReadJS = `<script>
 (function(){
 var t=document.getElementById('rd-text');if(!t)return;
 var d=t.dataset,pos=document.getElementById('rd-pos'),st=document.getElementById('rd-status'),qb=document.getElementById('rd-quote');
+function fit(){var s=document.getElementById('rd-shell');if(!s)return;s.style.setProperty('--rd-chrome','0px');
+var top=s.getBoundingClientRect().top+window.scrollY,below=document.documentElement.scrollHeight-top-s.offsetHeight;
+s.style.setProperty('--rd-chrome',Math.max(top+below,0)+'px');}
+if(window.__rdFit)window.removeEventListener('resize',window.__rdFit);window.__rdFit=fit;window.addEventListener('resize',fit);fit();
 var p0=parseFloat(d.p0),p1=parseFloat(d.p1),frac=parseFloat(d.frac)||0,timer=null,lastSent=-1;
-function span(){return Math.max(document.documentElement.scrollHeight-window.innerHeight,1);}
-function now(){var r=t.getBoundingClientRect(),top=window.scrollY+r.top,h=Math.max(r.height-window.innerHeight*0.5,1);return Math.min(Math.max((window.scrollY-top)/h,0),1);}
+function room(){return Math.max(t.scrollHeight-t.clientHeight,1);}
+function now(){return Math.min(Math.max(t.scrollTop/room(),0),1);}
 function show(f){var pct=p0+f*(p1-p0);if(pos)pos.textContent=d.pctlabel.replace('{percent}',pct.toFixed(0));return pct;}
 function post(url,obj){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj),credentials:'same-origin'});}
 function send(){var f=now();if(Math.abs(f-lastSent)<0.005)return;lastSent=f;var pct=show(f);
 post(d.progressUrl,{book:d.book,chapter:parseInt(d.chapter,10),frac:f,percent:pct,title:d.title}).catch(function(){});}
 function later(){show(now());clearTimeout(timer);timer=setTimeout(send,1500);}
-window.addEventListener('scroll',later,{passive:true});
-window.addEventListener('pagehide',function(){send();});
+t.addEventListener('scroll',later,{passive:true});
+if(window.__rdPageHide)window.removeEventListener('pagehide',window.__rdPageHide);
+window.__rdPageHide=function(){send();};window.addEventListener('pagehide',window.__rdPageHide);
+var shell=document.getElementById('rd-shell');
+if(shell)shell.addEventListener('htmx:beforeRequest',function(){send();});
 if(location.hash){var el=document.getElementById(decodeURIComponent(location.hash.slice(1)));if(el)el.scrollIntoView();}
-else if(frac>0){var r=t.getBoundingClientRect();window.scrollTo(0,window.scrollY+r.top+frac*Math.max(r.height-window.innerHeight*0.5,1));}
+else if(frac>0){t.scrollTop=frac*room();}
 show(now());
 var sel='';
-document.addEventListener('selectionchange',function(){
+if(window.__rdSelect)document.removeEventListener('selectionchange',window.__rdSelect);
+window.__rdSelect=function(){
 var s=window.getSelection();if(!s||s.isCollapsed||!t.contains(s.anchorNode)){qb.classList.remove('on');return;}
 sel=s.toString().trim();if(!sel){qb.classList.remove('on');return;}
-var r=s.getRangeAt(0).getBoundingClientRect();qb.style.top=Math.max(r.top-48,8)+'px';qb.style.left=Math.max(Math.min(r.left,window.innerWidth-160),8)+'px';qb.classList.add('on');});
+var r=s.getRangeAt(0).getBoundingClientRect();qb.style.top=Math.max(r.top-48,8)+'px';qb.style.left=Math.max(Math.min(r.left,window.innerWidth-160),8)+'px';qb.classList.add('on');};
+document.addEventListener('selectionchange',window.__rdSelect);
 qb.addEventListener('mousedown',function(e){e.preventDefault();});
 qb.addEventListener('click',function(){var text=sel;if(!text)return;
 post(d.highlightUrl,{book:d.book,text:text,chapter:d.chaptertitle,title:d.title,authors:d.authors}).then(function(r){
 st.textContent=r.ok?d.saved:d.failed;if(r.ok){window.getSelection().removeAllRanges();qb.classList.remove('on');}}).catch(function(){st.textContent=d.failed;});});
 })();
 </script>`
+
+// swapAttrs makes a chapter link swap the reading area in place (htmx), keeping the address bar
+// and the back button honest, the way the review pagers elsewhere in the mesh do.
+func swapAttrs(href string) string {
+	h := html.EscapeString(href)
+	return ` hx-get="` + h + `" hx-target="#rd-shell" hx-select="#rd-shell" hx-swap="outerHTML" hx-push-url="true"`
+}
 
 // epubFile picks the format the browser can read, with the index the file cache names it by.
 func epubFile(e *CatalogEntry) (int, bool) {
@@ -163,6 +181,7 @@ func (a *app) serveBookRead(w http.ResponseWriter, r *http.Request) {
 	}
 	p0, p1 := b.percent(n, 0), b.percent(n, 1)
 	p.StartFor(w, r, e.Title)
+	fmt.Fprint(w, `<div class="rd-shell" id="rd-shell">`)
 	var toc strings.Builder
 	toc.WriteString(`<details class="rd-toc"><summary>` + html.EscapeString(ui.ContentsHeading) + `</summary><ol>`)
 	for i := range b.spine {
@@ -174,7 +193,7 @@ func (a *app) serveBookRead(w http.ResponseWriter, r *http.Request) {
 		if i == n {
 			cur = ` aria-current="page"`
 		}
-		fmt.Fprintf(&toc, `<li><a href="%s" hx-boost="false"%s>%s</a></li>`, html.EscapeString(readURL(i, "")), cur, html.EscapeString(t))
+		fmt.Fprintf(&toc, `<li><a href="%s"%s%s>%s</a></li>`, html.EscapeString(readURL(i, "")), swapAttrs(readURL(i, "")), cur, html.EscapeString(t))
 	}
 	toc.WriteString(`</ol></details>`)
 
@@ -186,7 +205,7 @@ func (a *app) serveBookRead(w http.ResponseWriter, r *http.Request) {
 		if i < n {
 			icon = "fa-solid fa-chevron-left"
 		}
-		return string(webui.IconTextButton(icon, label, webui.BtnOpts{Kind: "secondary", Href: readURL(i, ""), Attrs: ` hx-boost="false"`}))
+		return string(webui.IconTextButton(icon, label, webui.BtnOpts{Kind: "secondary", Href: readURL(i, ""), Attrs: swapAttrs(readURL(i, ""))}))
 	}
 	fmt.Fprintf(w, `<div class="rd-bar">%s<span class="hint rd-pos" id="rd-pos" role="status">%s</span><span class="hint" id="rd-status" role="status"></span>%s</div>`,
 		nav(n-1, ui.Prev), html.EscapeString(fill(ui.PercentRead, "percent", fmt.Sprintf("%.0f", p0))), nav(n+1, ui.Next))
@@ -202,10 +221,9 @@ func (a *app) serveBookRead(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(&da, ` data-%s="%s"`, k, html.EscapeString(v))
 	}
 	fmt.Fprintf(w, `<article class="rd-text" id="rd-text"%s><h2>%s</h2>%s</article>`, da.String(), html.EscapeString(chTitle), body)
-	fmt.Fprintf(w, `<div class="rd-bar">%s<span></span>%s</div>`, nav(n-1, ui.Prev), nav(n+1, ui.Next))
 	fmt.Fprintf(w, `<div class="rd-quote" id="rd-quote">%s</div>`,
 		webui.IconTextButton("fa-solid fa-quote-left", ui.SaveQuote, webui.BtnOpts{Kind: "primary", Type: "button"}))
-	fmt.Fprint(w, readerReadJS)
+	fmt.Fprint(w, readerReadJS, `</div>`)
 	p.End(w)
 }
 

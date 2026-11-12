@@ -47,6 +47,16 @@ func TestTheReaderPageOpensTheBookAndSavesPlaceAndHighlights(t *testing.T) {
 			t.Errorf("the page lacks %q", want)
 		}
 	}
+	// Chapters swap in place (htmx), the bar is at the top only, and the reading area scrolls inside the page.
+	for _, want := range []string{`id="rd-shell"`, `hx-get="/books/read?id=` + key + `&amp;n=1"`, `hx-select="#rd-shell"`, `hx-push-url="true"`} {
+		if !strings.Contains(string(page), want) {
+			t.Errorf("the chapter links do not swap in place: lacks %q", want)
+		}
+	}
+	shell := string(page)[strings.Index(string(page), `id="rd-shell"`):]
+	if strings.Count(shell, `hx-boost="false"`) != strings.Count(shell, `target="_blank"`) || strings.Count(shell, `class="rd-bar"`) != 1 {
+		t.Errorf("a full page load on prev/next, or a second bar under the text (%d)", strings.Count(shell, `class="rd-bar"`))
+	}
 	if strings.Contains(string(page), "alert(") && !strings.Contains(string(page), "<script>\n(function(){") {
 		t.Error("book script reached the page")
 	}
