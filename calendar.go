@@ -26,9 +26,9 @@ import (
 
 const (
 	capCalendarGet = "reader.calendar.get"
-	maxLanes       = 6
+	maxLanes       = 4 // book rows in a cell; the cell is the same size whatever a week holds
 	calTones       = 5
-	tickBuckets    = 8 // three hours each
+	tickBuckets    = 24 // one per hour, midnight to midnight
 )
 
 // calBar is one book's run of consecutive reading days inside one week row.
@@ -47,7 +47,7 @@ type calDay struct {
 	InMonth bool
 	Today   bool
 	Minutes int
-	Ticks   [tickBuckets]int // 0 none .. 3 most
+	Ticks   [tickBuckets]int // 0 none .. 4 most
 }
 
 type calWeek struct {
@@ -111,28 +111,23 @@ func buildMonthCal(idx *readingIndex, loc *time.Location, month, now time.Time) 
 			cd := calDay{Date: date, Num: d.Day(), InMonth: d.Month() == first.Month(), Today: date == today}
 			if ds := idx.Days[date]; ds != nil && cd.InMonth {
 				cd.Minutes = ds.Minutes()
-				max := 0
 				var b [tickBuckets]int
 				for h, s := range ds.HourSeconds {
-					b[h/3] += s
-				}
-				for _, s := range b {
-					if s > max {
-						max = s
-					}
+					b[h%tickBuckets] += s
 				}
 				for i, s := range b {
 					switch {
 					case s <= 0:
 					case s < 300:
 						cd.Ticks[i] = 1
-					case s < 1200:
+					case s < 900:
 						cd.Ticks[i] = 2
-					default:
+					case s < 1800:
 						cd.Ticks[i] = 3
+					default:
+						cd.Ticks[i] = 4
 					}
 				}
-				_ = max
 				for _, bd := range ds.Books {
 					perBook[bd.BookMD5] = append(perBook[bd.BookMD5], c)
 					titles[bd.BookMD5] = bd.Title
@@ -237,7 +232,7 @@ func renderMonthCal(c monthCal) template.HTML {
 	}
 	b.WriteString(`</div>`)
 	for _, w := range c.Weeks {
-		tickRow := w.Lanes + 2
+		tickRow := maxLanes + 2 // the foot of the cell, below the book rows, whether or not they are used
 		fmt.Fprintf(&b, `<div class="ko-week">`)
 		for i, d := range w.Days {
 			cls := "ko-dn ko-a" + fmt.Sprint(i+1)
@@ -286,7 +281,8 @@ func koCalCSS() string {
 .ko-mcal{border:1px solid var(--border);border-radius:var(--r-card);background:var(--card);overflow:hidden}
 .ko-mhead,.ko-week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
 .ko-mhead{background:var(--th-bg);font-size:.75rem;color:var(--muted);text-align:center;padding:var(--sp-1) 0}
-.ko-week{border-top:1px solid var(--border);row-gap:2px;padding-bottom:var(--sp-1)}
+.ko-mcal{--ko-row:calc(.72rem*1.5)}
+.ko-week{border-top:1px solid var(--border);row-gap:2px;padding-bottom:var(--sp-1);grid-template-rows:auto repeat(5,var(--ko-row))}
 .ko-dn{padding:var(--sp-1) var(--sp-1) 0;font-size:.8rem;color:var(--text)}
 .ko-out{color:var(--faint)}
 .ko-today{font-weight:700;color:var(--accent)}
@@ -294,9 +290,9 @@ a.ko-dn{text-decoration:none}
 .ko-bar{display:block;min-width:0;margin:0 1px;padding:0 var(--sp-1);font-size:.72rem;line-height:1.5;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-hi);text-decoration:none;
   border-radius:var(--r-chip,4px);border-left:3px solid var(--bar)}
-.ko-ticks{display:flex;align-items:flex-end;justify-content:center;gap:1px;height:12px;padding:0 var(--sp-1)}
-.ko-ticks i{display:block;flex:1;max-width:4px;background:var(--muted);border-radius:1px}
-.ko-k0{height:1px;opacity:.3}.ko-k1{height:4px}.ko-k2{height:8px}.ko-k3{height:12px}
+.ko-ticks{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));align-items:end;height:var(--ko-row);margin:0 1px}
+.ko-ticks i{display:block;background:var(--muted);border-radius:1px}
+.ko-k0{height:1px;opacity:.3}.ko-k1{height:25%}.ko-k2{height:50%}.ko-k3{height:75%}.ko-k4{height:100%}
 .ko-t0{--bar:var(--accent-fill);background:color-mix(in srgb,var(--accent-fill) 35%,var(--card))}
 .ko-t1{--bar:var(--done);background:color-mix(in srgb,var(--done) 35%,var(--card))}
 .ko-t2{--bar:var(--special);background:color-mix(in srgb,var(--special) 35%,var(--card))}
@@ -347,7 +343,7 @@ func calendarCapability() xats.Capability {
 			"prev":  map[string]any{"type": "string"}, "next": map[string]any{"type": "string"},
 			"minutes": map[string]any{"type": "integer"}, "books": map[string]any{"type": "integer"},
 			"weeks": map[string]any{"type": "array", "items": map[string]any{"type": "object", "properties": map[string]any{
-				"days": map[string]any{"type": "array", "description": "seven days, Monday first: date, minutes, ticks (eight 3-hour buckets, 0-3)"},
+				"days": map[string]any{"type": "array", "description": "seven days, Monday first: date, minutes, ticks (24 hourly buckets from midnight, 0-4)"},
 				"bars": map[string]any{"type": "array", "description": "book, title, start (1-7), span, lane, tone (0-4)"},
 			}}},
 		}},

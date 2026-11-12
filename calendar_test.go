@@ -36,7 +36,7 @@ func TestMonthCalendarBarsSpanDaysAndStackLanes(t *testing.T) {
 	if w.Bars[1].Col != 2 || w.Bars[1].Lane != 2 || w.Bars[1].Tone == w.Bars[0].Tone {
 		t.Fatalf("emma bar %+v", w.Bars[1])
 	}
-	if w.Days[1].Ticks[7] != 3 || w.Days[1].Ticks[2] != 2 {
+	if w.Days[1].Ticks[21] != 3 || w.Days[1].Ticks[7] != 2 || len(w.Days[1].Ticks) != 24 {
 		t.Fatalf("ticks %+v", w.Days[1].Ticks)
 	}
 	h := string(renderMonthCal(c))
@@ -55,5 +55,26 @@ func TestCalendarCapabilityMatchesTheGrid(t *testing.T) {
 	out := a.dispatch(t.Context(), capCalendarGet, map[string]any{"caller_user_id": "m@zm.is", "month": "2026-11"})
 	if out["month"] != "2026-11" || out["error"] != nil {
 		t.Fatalf("%#v", out)
+	}
+}
+
+// Every cell is the same size: the date, four book rows, and a foot the height of one book row that
+// holds the whole day, midnight to midnight, one tick per hour across the full cell width.
+func TestMonthCalendarCellsAreOneSize(t *testing.T) {
+	idx := buildReadingIndex([]ReadEvent{{ID: "e1", Kind: KindRead, BookMD5: "a", Title: "Dune", Page: 1,
+		StartTime: time.Date(2026, 11, 3, 7, 0, 0, 0, time.UTC).Unix(), Duration: 600}}, time.UTC)
+	c := buildMonthCal(idx, time.UTC, time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 12, 0, 0, 0, 0, time.UTC))
+	h := string(renderMonthCal(c))
+	if !strings.Contains(h, `class="ko-ticks ko-a2 ko-r6"`) {
+		t.Errorf("the histogram sits in the sixth row whatever the week holds")
+	}
+	if n := strings.Count(h[strings.Index(h, `ko-ticks`):], `<i class="ko-k`); n < 24 {
+		t.Errorf("a day's histogram has one tick per hour, got %d", n)
+	}
+	css := koCalCSS()
+	for _, want := range []string{`grid-template-rows:auto repeat(5,var(--ko-row))`, `.ko-ticks{display:grid;grid-template-columns:repeat(24,`} {
+		if !strings.Contains(css, want) {
+			t.Errorf("css missing %q", want)
+		}
 	}
 }
