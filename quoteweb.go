@@ -123,11 +123,11 @@ func booksListView() webui.ListView {
 		PageSizes:         []int{25, 50, 100},
 		Columns: []webui.Column{
 			{Key: "title", Label: "Book", Sortable: true},
-			{Key: "read", Label: ""},
 			{Key: "quotes", Label: "Quotes", Sortable: true, Numeric: true},
 			{Key: "time", Label: "Time", Sortable: true, Numeric: true, Priority: 1},
 			{Key: "pages", Label: "Pages", Sortable: true, Numeric: true, Priority: 2},
 			{Key: "days", Label: "Days", Sortable: true, Numeric: true, Priority: 3},
+			{Key: "read", Label: ""},
 		},
 	}
 }
