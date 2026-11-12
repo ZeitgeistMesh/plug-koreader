@@ -105,7 +105,7 @@ func (a *app) quoteView() quotebrowser.Config {
 
 // bookReadLink is where a quoted book opens in the browser: the catalog entry whose title is the
 // highlight's book (the device and the book server name it the same, case and spacing aside) and
-// that has an EPUB. "" when the book is not on the connected server, or two entries share the name.
+// that has an EPUB. "" when the book is not on the connected server.
 func (a *app) bookReadLink(ctx context.Context, caller, _, title string) string {
 	want := normTitle(title)
 	if want == "" {
@@ -121,10 +121,8 @@ func (a *app) bookReadLink(ctx context.Context, caller, _, title string) string 
 		if _, ok := epubFile(e); !ok || normTitle(displayTitle(e.Title)) != want {
 			continue
 		}
-		if found != nil {
-			return ""
-		}
-		found = e
+		found = e // several editions share a title: the first one is as good as any
+		break
 	}
 	if found == nil {
 		return ""
