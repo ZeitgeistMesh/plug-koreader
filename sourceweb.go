@@ -230,8 +230,8 @@ func catalogRows(entries []CatalogEntry, q webui.ListQuery) ([]webui.Row, int) {
 		}
 		var fm []string
 		if _, ok := epubFile(&e); ok {
-			fm = append(fm, fmt.Sprintf(`<a href="%s/read?id=%s" hx-boost="false" data-tip="%s">%s</a>`,
-				booksPath, key, html.EscapeString(ui.ReadTip), html.EscapeString(ui.ReadLink)))
+			fm = append(fm, string(webui.IconTextButton("fa-solid fa-book-open-reader", ui.ReadLink,
+				webui.BtnOpts{Kind: "secondary", Size: "sm", Href: booksPath + "/read?id=" + key, Attrs: ` hx-boost="false" data-tip="` + html.EscapeString(ui.ReadTip) + `"`})))
 		}
 		for i, f := range e.Files {
 			fm = append(fm, fmt.Sprintf(`<a href="%s/file?id=%s&amp;f=%d" hx-boost="false" data-tip="%s">%s</a>`,

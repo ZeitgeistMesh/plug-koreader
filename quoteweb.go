@@ -102,7 +102,7 @@ func (a *app) serveBooks(w http.ResponseWriter, r *http.Request) {
 
 	view := booksListView()
 	q := view.ParseListQuery(r)
-	rows, total := bookRows(shelf(idx), q)
+	rows, total := bookRows(shelf(idx), q, func(b BookShelf) string { return a.bookReadLink(r.Context(), caller, b.MD5, b.Title) })
 
 	if flowweb.WantsFragment(r) && r.Method == http.MethodGet {
 		view.RenderFragment(w, q, rows, total)
@@ -123,6 +123,7 @@ func booksListView() webui.ListView {
 		PageSizes:         []int{25, 50, 100},
 		Columns: []webui.Column{
 			{Key: "title", Label: "Book", Sortable: true},
+			{Key: "read", Label: ""},
 			{Key: "quotes", Label: "Quotes", Sortable: true, Numeric: true},
 			{Key: "time", Label: "Time", Sortable: true, Numeric: true, Priority: 1},
 			{Key: "pages", Label: "Pages", Sortable: true, Numeric: true, Priority: 2},
@@ -131,7 +132,8 @@ func booksListView() webui.ListView {
 	}
 }
 
-func bookRows(books []BookShelf, q webui.ListQuery) ([]webui.Row, int) {
+// readHref is the in-app reader address for a book, or "" when the catalog has no EPUB of it (nil: none).
+func bookRows(books []BookShelf, q webui.ListQuery, readHref func(BookShelf) string) ([]webui.Row, int) {
 	needle := strings.ToLower(strings.TrimSpace(q.Search))
 	filtered := make([]BookShelf, 0, len(books))
 	for _, b := range books {
@@ -192,8 +194,15 @@ func bookRows(books []BookShelf, q webui.ListQuery) ([]webui.Row, int) {
 		if b.Highlights > 0 {
 			quotes = webui.Text(fmt.Sprintf("%d", b.Highlights))
 		}
+		read := webui.Text("")
+		if readHref != nil {
+			if href := readHref(b); href != "" {
+				read = webui.IconTextButton("fa-solid fa-book-open-reader", ui.ReadLink, webui.BtnOpts{Kind: "secondary", Size: "sm", Href: href})
+			}
+		}
 		rows = append(rows, webui.Row{
 			"title":  title,
+			"read":   read,
 			"quotes": quotes,
 			"time":   webui.Text(humanDuration(b.Seconds)),
 			"pages":  webui.Text(fmt.Sprintf("%d", b.Pages)),

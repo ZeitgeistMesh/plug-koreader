@@ -396,7 +396,7 @@ func TestBookRowsOnlyLinkBooksThatHaveQuotes(t *testing.T) {
 	rows, total := bookRows([]BookShelf{
 		{MD5: "aaa", Title: "Has quotes", Highlights: 3},
 		{MD5: "bbb", Title: "No quotes", Highlights: 0, Seconds: 900},
-	}, webui.ListQuery{Page: 1, PageSize: 10})
+	}, webui.ListQuery{Page: 1, PageSize: 10}, nil)
 
 	if total != 2 {
 		t.Fatalf("total = %d, want 2", total)
@@ -506,5 +506,24 @@ func TestBookReadLinkFindsTheEpubByTitle(t *testing.T) {
 	}
 	if normTitle("") != "" {
 		t.Fatal("an empty title matches nothing")
+	}
+}
+
+// A book the catalog holds as an EPUB gets a Read button on the Books list; one it does not hold gets none.
+func TestBookRowsOfferReadWhereTheCatalogHasTheBook(t *testing.T) {
+	rows, _ := bookRows([]BookShelf{
+		{MD5: "aaa", Title: "Held", Highlights: 1},
+		{MD5: "bbb", Title: "Missing", Highlights: 1},
+	}, webui.ListQuery{Page: 1, PageSize: 10}, func(b BookShelf) string {
+		if b.MD5 == "aaa" {
+			return "/books/read?id=k1"
+		}
+		return ""
+	})
+	if got := string(rows[0]["read"]); !strings.Contains(got, `href="/books/read?id=k1"`) || !strings.Contains(got, "> Read<") {
+		t.Errorf("a held book needs a Read button: %s", got)
+	}
+	if got := string(rows[1]["read"]); got != "" {
+		t.Errorf("no EPUB, no button: %s", got)
 	}
 }
