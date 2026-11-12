@@ -134,5 +134,8 @@ func (a *app) bookReadLink(ctx context.Context, caller, _, title string) string 
 
 // normTitle compares titles without caring about case or runs of spaces.
 func normTitle(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return ""
+	}
 	return strings.ToLower(strings.Join(strings.Fields(displayTitle(s)), " "))
 }
