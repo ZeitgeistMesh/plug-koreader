@@ -90,6 +90,9 @@ func TestMonthCalendarDaysAreBoxesAndNavIsHtmx(t *testing.T) {
 	if !strings.Contains(h, `<a class="ko-box ko-a1 ko-boxout" href="/day?d=`) {
 		t.Errorf("the empty middle of a day box is a link to the day")
 	}
+	if n := strings.Count(h, `<a class="ko-dn `); n != 7*len(c.Weeks) {
+		t.Errorf("%d date links, want %d: an empty day opens the day from its top too", n, 7*len(c.Weeks))
+	}
 	for _, want := range []string{`id="ko-cal"`, `hx-get="/calendar?m=2026-10"`, `hx-target="#ko-cal"`, `hx-push-url="true"`} {
 		if !strings.Contains(h, want) {
 			t.Errorf("missing %q", want)

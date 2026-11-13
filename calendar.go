@@ -252,11 +252,11 @@ func renderMonthCal(c monthCal) template.HTML {
 			if d.Today {
 				cls += " ko-today"
 			}
+			label := d.Date
 			if d.Minutes > 0 {
-				fmt.Fprintf(&b, `<a class="%s ko-r1" href="/day?d=%s" aria-label="%s: %d min">%d</a>`, cls, d.Date, d.Date, d.Minutes, d.Num)
-			} else {
-				fmt.Fprintf(&b, `<span class="%s ko-r1">%d</span>`, cls, d.Num)
+				label = fmt.Sprintf("%s: %d min", d.Date, d.Minutes)
 			}
+			fmt.Fprintf(&b, `<a class="%s ko-r1" href="/day?d=%s" aria-label="%s">%d</a>`, cls, d.Date, label, d.Num)
 		}
 		for _, bar := range w.Bars {
 			href := "/day?d=" + bar.FirstDay
