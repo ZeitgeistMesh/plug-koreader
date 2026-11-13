@@ -209,9 +209,9 @@ func renderMonthCal(c monthCal) template.HTML {
 	var b strings.Builder
 	nav := func(icon, label, month string) {
 		b.WriteString(string(webui.IconTextButton(icon, "", webui.BtnOpts{Size: "sm", Href: "/calendar?m=" + month, Title: label,
-			Attrs: `aria-label="` + template.HTMLEscapeString(label) + `"`})))
+			Attrs: `aria-label="` + template.HTMLEscapeString(label) + `" hx-get="/calendar?m=` + month + `" hx-target="#ko-cal" hx-swap="outerHTML" hx-select="#ko-cal" hx-push-url="true"`})))
 	}
-	b.WriteString(`<div class="ko-calnav">`)
+	b.WriteString(`<div id="ko-cal"><div class="ko-calnav">`)
 	nav("fa-solid fa-angles-left", calPrevYear, c.PrevY)
 	nav("fa-solid fa-angle-left", calPrevMonth, c.Prev)
 	fmt.Fprintf(&b, `<span class="ko-calmonth">%s</span>`, c.Month)
@@ -234,6 +234,16 @@ func renderMonthCal(c monthCal) template.HTML {
 	for _, w := range c.Weeks {
 		tickRow := maxLanes + 2 // the foot of the cell, below the book rows, whether or not they are used
 		fmt.Fprintf(&b, `<div class="ko-week">`)
+		for i, d := range w.Days {
+			box := "ko-box ko-a" + fmt.Sprint(i+1)
+			if !d.InMonth {
+				box += " ko-boxout"
+			}
+			if d.Today {
+				box += " ko-boxtoday"
+			}
+			fmt.Fprintf(&b, `<span class="%s" aria-hidden="true"></span>`, box)
+		}
 		for i, d := range w.Days {
 			cls := "ko-dn ko-a" + fmt.Sprint(i+1)
 			if !d.InMonth {
@@ -268,7 +278,7 @@ func renderMonthCal(c monthCal) template.HTML {
 		}
 		b.WriteString(`</div>`)
 	}
-	b.WriteString(`</div>`)
+	b.WriteString(`</div></div>`)
 	return template.HTML(b.String())
 }
 
@@ -278,11 +288,14 @@ func koCalCSS() string {
 	b.WriteString(`<style>
 .ko-calnav{display:flex;align-items:center;gap:var(--sp-2);margin:0 0 var(--sp-2)}
 .ko-calmonth{flex:1;text-align:center;font-weight:600}
-.ko-mcal{border:1px solid var(--border);border-radius:var(--r-card);background:var(--card);overflow:hidden}
+.ko-mcal{display:grid;gap:var(--sp-1)}
 .ko-mhead,.ko-week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
-.ko-mhead{background:var(--th-bg);font-size:.75rem;color:var(--muted);text-align:center;padding:var(--sp-1) 0}
+.ko-mhead{column-gap:var(--sp-1);font-size:.75rem;color:var(--muted);text-align:center}
 .ko-mcal{--ko-row:calc(.72rem*1.5)}
-.ko-week{border-top:1px solid var(--border);row-gap:2px;padding-bottom:var(--sp-1);grid-template-rows:auto repeat(5,var(--ko-row))}
+.ko-week{column-gap:var(--sp-1);row-gap:2px;padding-bottom:var(--sp-1);grid-template-rows:auto repeat(5,var(--ko-row))}
+.ko-box{grid-row:1/-1;border:1px solid var(--border);border-radius:var(--r-chip,4px);background:var(--card)}
+.ko-boxout{background:transparent;border-style:dashed}
+.ko-boxtoday{border-color:var(--accent)}
 .ko-dn{padding:var(--sp-1) var(--sp-1) 0;font-size:.8rem;color:var(--text)}
 .ko-out{color:var(--faint)}
 .ko-today{font-weight:700;color:var(--accent)}
@@ -290,7 +303,7 @@ a.ko-dn{text-decoration:none}
 .ko-bar{display:block;min-width:0;margin:0 1px;padding:0 var(--sp-1);font-size:.72rem;line-height:1.5;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-hi);text-decoration:none;
   border-radius:var(--r-chip,4px);border-left:3px solid var(--bar)}
-.ko-ticks{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));align-items:end;height:var(--ko-row);margin:0 1px}
+.ko-ticks{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));align-items:end;height:var(--ko-row);margin:0 1px 1px}
 .ko-ticks i{display:block;background:var(--muted);border-radius:1px}
 .ko-k0{height:1px;opacity:.3}.ko-k1{height:25%}.ko-k2{height:50%}.ko-k3{height:75%}.ko-k4{height:100%}
 .ko-t0{--bar:var(--accent-fill);background:color-mix(in srgb,var(--accent-fill) 35%,var(--card))}
