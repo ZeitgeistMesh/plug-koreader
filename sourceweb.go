@@ -233,15 +233,17 @@ func catalogRows(entries []CatalogEntry, q webui.ListQuery) ([]webui.Row, int) {
 			fm = append(fm, string(webui.IconTextButton("fa-solid fa-book-open-reader", ui.ReadLink,
 				webui.BtnOpts{Kind: "secondary", Size: "sm", Href: booksPath + "/read?id=" + key, Attrs: ` hx-boost="false" data-tip="` + html.EscapeString(ui.ReadTip) + `"`})))
 		}
+		// The Read button and each download are the same house button, in one row with the house gap
+		// (owner, plan 26856ccd: the EPUB link sat tight against Read, in another theme).
 		for i, f := range e.Files {
-			fm = append(fm, fmt.Sprintf(`<a href="%s/file?id=%s&amp;f=%d" hx-boost="false" data-tip="%s">%s</a>`,
-				booksPath, key, i, html.EscapeString(ui.DownloadTitle), html.EscapeString(strings.ToUpper(fileExt(f.Type)))))
+			fm = append(fm, string(webui.IconTextButton("fa-solid fa-download", strings.ToUpper(fileExt(f.Type)),
+				webui.BtnOpts{Kind: "secondary", Size: "sm", Href: fmt.Sprintf("%s/file?id=%s&f=%d", booksPath, key, i), Attrs: ` hx-boost="false" data-tip="` + html.EscapeString(ui.DownloadTitle) + `"`})))
 		}
 		rows = append(rows, webui.Row{
 			"cover":   cover,
 			"title":   webui.Text(e.Title),
 			"authors": webui.Text(e.Authors),
-			"formats": template.HTML(strings.Join(fm, " ")),
+			"formats": template.HTML(`<div class="field-row">` + strings.Join(fm, "") + `</div>`),
 		})
 	}
 	return rows, total
