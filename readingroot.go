@@ -48,12 +48,7 @@ const koReadingCSS = `<style>
    the header. Scoped to :first-child so only the leading list loses the margin, and only
    on this plug's pages rather than every list in the mesh. */
 main > .listview:first-child{margin-top:0}
-.ko-tiles{display:flex;flex-wrap:wrap;gap:var(--sp-3);margin:0 0 var(--sp-4)}
-.ko-tile{flex:1 1 7rem;background:var(--card);border:1px solid var(--border);
-  border-radius:var(--r-card);padding:var(--sp-3)}
-.ko-tile-v{display:block;font-size:1.6rem;line-height:1.1;font-weight:600}
-.ko-tile-l{display:block;font-size:.8rem;color:var(--muted)}
-.ko-tile-n{display:block;font-size:.75rem;color:var(--muted)}
+.stat-grid{margin:0 0 var(--sp-4)}
 
 .ko-calwrap{overflow-x:auto;padding-bottom:var(--sp-2)}
 .ko-cal{display:inline-block;min-width:max-content}

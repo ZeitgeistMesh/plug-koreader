@@ -92,25 +92,13 @@ func (a *app) readingTotals(idx *readingIndex, loc *time.Location, lastSync time
 		streakValue += "*"
 	}
 
-	tiles := []struct{ label, value, note string }{
-		{"Days read", fmt.Sprintf("%d", len(idx.Dates)), ""},
-		{"Hours", fmt.Sprintf("%.0f", float64(seconds)/3600), ""},
-		{"Pages", fmt.Sprintf("%d", pages), ""},
-		{"Highlights", fmt.Sprintf("%d", highlights), ""},
-		{"Current streak", streakValue, streakNote(streak)},
-	}
-	var b strings.Builder
-	b.WriteString(`<div class="ko-tiles">`)
-	for _, t := range tiles {
-		note := ""
-		if t.note != "" {
-			note = fmt.Sprintf(`<span class="ko-tile-n">%s</span>`, webui.Text(t.note))
-		}
-		fmt.Fprintf(&b, `<div class="ko-tile"><span class="ko-tile-v">%s</span><span class="ko-tile-l">%s</span>%s</div>`,
-			webui.Text(t.value), webui.Text(t.label), note)
-	}
-	b.WriteString(`</div>`)
-	return template.HTML(b.String())
+	return webui.StatGrid([]webui.Stat{
+		{Label: "Days read", Value: fmt.Sprintf("%d", len(idx.Dates))},
+		{Label: "Hours", Value: fmt.Sprintf("%.0f", float64(seconds)/3600)},
+		{Label: "Pages", Value: fmt.Sprintf("%d", pages)},
+		{Label: "Highlights", Value: fmt.Sprintf("%d", highlights)},
+		{Label: "Current streak", Value: streakValue, Hint: streakNote(streak)},
+	})
 }
 
 // currentStreak counts consecutive days ending today or yesterday. Yesterday counts
