@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
-	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -259,12 +258,10 @@ func renderMonthCal(c monthCal) template.HTML {
 			fmt.Fprintf(&b, `<a class="%s ko-r1" href="/day?d=%s" aria-label="%s">%d</a>`, cls, d.Date, label, d.Num)
 		}
 		for _, bar := range w.Bars {
-			href := "/day?d=" + bar.FirstDay
-			if bar.Quotes {
-				href = "/quote?book=" + url.QueryEscape(bar.MD5)
-			}
-			fmt.Fprintf(&b, `<a class="ko-bar ko-a%d ko-n%d ko-r%d ko-t%d" href="%s" aria-label="%s">%s</a>`,
-				bar.Col, bar.Span, bar.Lane+1, bar.Tone, href, template.HTMLEscapeString(bar.Title), webui.Text(bar.Title))
+			// A bar is a label only: a click on it falls through to the day box beneath, so a click
+			// anywhere in a day box opens THAT day, whichever book's bar crosses it.
+			fmt.Fprintf(&b, `<span class="ko-bar ko-a%d ko-n%d ko-r%d ko-t%d" title="%s">%s</span>`,
+				bar.Col, bar.Span, bar.Lane+1, bar.Tone, template.HTMLEscapeString(bar.Title), webui.Text(bar.Title))
 		}
 		for i, d := range w.Days {
 			if d.Minutes == 0 {
@@ -300,7 +297,7 @@ func koCalCSS() string {
 .ko-out{color:var(--faint)}
 .ko-today{font-weight:700;color:var(--accent)}
 a.ko-dn{text-decoration:none}
-.ko-bar{display:block;min-width:0;margin:0 1px;padding:0 var(--sp-1);font-size:.72rem;line-height:1.5;
+.ko-bar{display:block;pointer-events:none;min-width:0;margin:0 1px;padding:0 var(--sp-1);font-size:.72rem;line-height:1.5;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-hi);text-decoration:none;
   border-radius:var(--r-chip,4px);border-left:3px solid var(--bar)}
 .ko-ticks{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));align-items:end;height:var(--ko-row);margin:0 1px 1px}
