@@ -242,7 +242,7 @@ func renderMonthCal(c monthCal) template.HTML {
 			if d.Today {
 				box += " ko-boxtoday"
 			}
-			fmt.Fprintf(&b, `<span class="%s" aria-hidden="true"></span>`, box)
+			fmt.Fprintf(&b, `<a class="%s" href="/day?d=%s" tabindex="-1" aria-hidden="true"></a>`, box, d.Date)
 		}
 		for i, d := range w.Days {
 			cls := "ko-dn ko-a" + fmt.Sprint(i+1)
@@ -293,7 +293,7 @@ func koCalCSS() string {
 .ko-mhead{column-gap:var(--sp-1);font-size:.75rem;color:var(--muted);text-align:center}
 .ko-mcal{--ko-row:calc(.72rem*1.5)}
 .ko-week{column-gap:var(--sp-1);row-gap:2px;padding-bottom:var(--sp-1);grid-template-rows:auto repeat(5,var(--ko-row))}
-.ko-box{grid-row:1/-1;border:1px solid var(--border);border-radius:var(--r-chip,4px);background:var(--card)}
+.ko-box{grid-row:1/-1;display:block;border:1px solid var(--border);border-radius:var(--r-chip,4px);background:var(--card)}
 .ko-boxout{background:transparent;border-style:dashed}
 .ko-boxtoday{border-color:var(--accent)}
 .ko-dn{padding:var(--sp-1) var(--sp-1) 0;font-size:.8rem;color:var(--text)}
