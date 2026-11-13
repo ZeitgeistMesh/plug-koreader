@@ -236,7 +236,10 @@ func renderMonthCal(c monthCal) template.HTML {
 		for i, d := range w.Days {
 			box := "ko-box ko-a" + fmt.Sprint(i+1)
 			if !d.InMonth {
-				box += " ko-boxout"
+				// A day of the neighbouring month is blank: no number, no data, nothing to click
+				// (owner, plan dab02a73: it looked empty, yet a click opened a day with results).
+				fmt.Fprintf(&b, `<span class="%s ko-boxout" aria-hidden="true"></span>`, box)
+				continue
 			}
 			if d.Today {
 				box += " ko-boxtoday"
@@ -244,10 +247,10 @@ func renderMonthCal(c monthCal) template.HTML {
 			fmt.Fprintf(&b, `<a class="%s" href="/day?d=%s" tabindex="-1" aria-hidden="true"></a>`, box, d.Date)
 		}
 		for i, d := range w.Days {
-			cls := "ko-dn ko-a" + fmt.Sprint(i+1)
 			if !d.InMonth {
-				cls += " ko-out"
+				continue
 			}
+			cls := "ko-dn ko-a" + fmt.Sprint(i+1)
 			if d.Today {
 				cls += " ko-today"
 			}
@@ -291,7 +294,7 @@ func koCalCSS() string {
 .ko-mcal{--ko-row:calc(.72rem*1.5)}
 .ko-week{column-gap:var(--sp-1);row-gap:2px;padding-bottom:var(--sp-1);grid-template-rows:auto repeat(5,var(--ko-row))}
 .ko-box{grid-row:1/-1;display:block;border:1px solid var(--border);border-radius:var(--r-chip,4px);background:var(--card)}
-.ko-boxout{background:transparent;border-style:dashed}
+.ko-boxout{background:transparent;border-color:transparent}
 .ko-boxtoday{border-color:var(--accent)}
 .ko-dn{padding:var(--sp-1) var(--sp-1) 0;font-size:.8rem;color:var(--text)}
 .ko-out{color:var(--faint)}

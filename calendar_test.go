@@ -87,12 +87,25 @@ func TestMonthCalendarDaysAreBoxesAndNavIsHtmx(t *testing.T) {
 	if n, want := strings.Count(h, `class="ko-box `), 7*len(c.Weeks); n != want {
 		t.Errorf("%d day boxes, want %d (one per day)", n, want)
 	}
-	if !strings.Contains(h, `<a class="ko-box ko-a1 ko-boxout" href="/day?d=`) {
-		t.Errorf("the empty middle of a day box is a link to the day")
+	if !strings.Contains(h, `<a class="ko-box ko-a7" href="/day?d=2026-11-01"`) {
+		t.Errorf("the empty middle of an in-month day box is a link to the day")
 	}
-	if n := strings.Count(h, `<a class="ko-dn `); n != 7*len(c.Weeks) {
-		t.Errorf("%d date links, want %d: an empty day opens the day from its top too", n, 7*len(c.Weeks))
+	// 1 Nov 2026 is a Sunday, 30 Nov a Monday: six October days and six December days are blank.
+	if n := strings.Count(h, ` ko-boxout" aria-hidden="true"></span>`); n != 12 || strings.Contains(h, "d=2026-10-") || strings.Contains(h, "d=2026-12") {
+		t.Errorf("days of the neighbouring months must be blank and unlinked: %d blank boxes", n)
 	}
+	inMonth := 0
+	for _, w := range c.Weeks {
+		for _, d := range w.Days {
+			if d.InMonth {
+				inMonth++
+			}
+		}
+	}
+	if n := strings.Count(h, `<a class="ko-dn `); n != inMonth {
+		t.Errorf("%d date links, want %d: only days of this month open a day", n, inMonth)
+	}
+
 	for _, want := range []string{`id="ko-cal"`, `hx-get="/calendar?m=2026-10"`, `hx-target="#ko-cal"`, `hx-push-url="true"`} {
 		if !strings.Contains(h, want) {
 			t.Errorf("missing %q", want)
