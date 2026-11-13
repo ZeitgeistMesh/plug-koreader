@@ -181,7 +181,7 @@ func (a *app) page(active string) flowweb.Page {
 		Brand: readerApp.Name, Emoji: readerApp.Emoji, Icon: readerApp.Icon,
 		IconColor: readerApp.IconColor,
 		CSS:       webui.AppShellCSS,
-		HeadHTML:  webui.FontAwesomeHead + webui.ListViewHead() + koSchemaCSS + webui.StatGridCSS + koReadingCSS + quotebrowser.HeadHTML(),
+		HeadHTML:  webui.FontAwesomeHead + webui.ListViewHead() + koSchemaCSS + "<style>" + webui.StatGridCSS + "</style>" + koReadingCSS + quotebrowser.HeadHTML(),
 		Nav:       nav(active),
 	}
 }

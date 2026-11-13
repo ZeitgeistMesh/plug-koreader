@@ -527,3 +527,15 @@ func TestBookRowsOfferReadWhereTheCatalogHasTheBook(t *testing.T) {
 		t.Errorf("no EPUB, no button: %s", got)
 	}
 }
+
+// The shared stat-grid stylesheet is bare CSS: it must sit inside a <style> element in the
+// head, or its text prints at the top of the page.
+func TestStatGridCSSIsWrappedInAStyleElement(t *testing.T) {
+	src, err := os.ReadFile("addonweb.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), `"<style>" + webui.StatGridCSS + "</style>"`) {
+		t.Error("webui.StatGridCSS must be wrapped in <style>…</style> where it joins HeadHTML")
+	}
+}
