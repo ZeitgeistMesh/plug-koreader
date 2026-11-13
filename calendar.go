@@ -202,6 +202,15 @@ const (
 	calSummaryOne = "%d min in 1 book"
 )
 
+// monthTitle is the heading in plain words, "November 2026", not the "2026-11" the links carry.
+func monthTitle(m string) string {
+	t, err := time.Parse("2006-01", m)
+	if err != nil {
+		return m
+	}
+	return t.Format("January 2006")
+}
+
 var calDayNames = [7]string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
 
 func renderMonthCal(c monthCal) template.HTML {
@@ -213,7 +222,7 @@ func renderMonthCal(c monthCal) template.HTML {
 	b.WriteString(`<div id="ko-cal"><div class="ko-calnav">`)
 	nav("fa-solid fa-angles-left", calPrevYear, c.PrevY)
 	nav("fa-solid fa-angle-left", calPrevMonth, c.Prev)
-	fmt.Fprintf(&b, `<span class="ko-calmonth">%s</span>`, c.Month)
+	fmt.Fprintf(&b, `<span class="ko-calmonth">%s</span>`, monthTitle(c.Month))
 	nav("fa-solid fa-angle-right", calNextMonth, c.Next)
 	nav("fa-solid fa-angles-right", calNextYear, c.NextY)
 	b.WriteString(string(webui.IconTextButton("fa-solid fa-table-cells", calYearView, webui.BtnOpts{Size: "sm", Href: "/"})))

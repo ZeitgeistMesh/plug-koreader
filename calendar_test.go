@@ -94,6 +94,9 @@ func TestMonthCalendarDaysAreBoxesAndNavIsHtmx(t *testing.T) {
 	if n := strings.Count(h, ` ko-boxout" aria-hidden="true"></span>`); n != 12 || strings.Contains(h, "d=2026-10-") || strings.Contains(h, "d=2026-12") {
 		t.Errorf("days of the neighbouring months must be blank and unlinked: %d blank boxes", n)
 	}
+	if !strings.Contains(h, `<span class="ko-calmonth">November 2026</span>`) {
+		t.Errorf("the heading is plain words")
+	}
 	inMonth := 0
 	for _, w := range c.Weeks {
 		for _, d := range w.Days {
