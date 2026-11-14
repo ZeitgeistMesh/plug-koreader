@@ -43,10 +43,22 @@ type libBook struct {
 	Shelf *BookShelf
 }
 
-// unescapeOnce undoes one layer of HTML entities. A book server's feed can carry a title that was escaped
+// unescapeOnce undoes the layers of HTML entities. A book server's feed can carry a title that was escaped
 // twice ("&#40;Kate Daniels 1&#41;"), which the page then escaped a third time and printed as code
 // (owner via master, plan 26856ccd); the text is made plain once here and escaped once when drawn.
-func unescapeOnce(s string) string { return html.UnescapeString(s) }
+//
+// UNTIL IT STOPS CHANGING (at most three passes): the feed this came from had escaped the text twice before it
+// reached us, so one pass left "&#40;" behind. Plain text with no entities is returned untouched.
+func unescapeOnce(s string) string {
+	for i := 0; i < 3; i++ {
+		u := html.UnescapeString(s)
+		if u == s {
+			break
+		}
+		s = u
+	}
+	return s
+}
 
 func (b libBook) title() string {
 	if b.Entry != nil {
@@ -194,7 +206,9 @@ func btnHTML(in []string) []template.HTML {
 
 func libraryRow(b libBook) webui.Row {
 	cover := webui.Text("")
-	title := webui.Text(displayTitle(b.title()))
+	full := displayTitle(b.title())
+	// Two lines at most, so a long title does not make its row tall; the whole title is the tooltip.
+	title := template.HTML(`<span class="rd-title" title="` + html.EscapeString(full) + `">` + html.EscapeString(full) + `</span>`)
 	if strings.TrimSpace(b.title()) == "" {
 		// A reading the device sent with no title cannot be matched to a book on the server. Say so,
 		// rather than a bare "Untitled" beside an author nobody recognises.

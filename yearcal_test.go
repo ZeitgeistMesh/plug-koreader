@@ -96,6 +96,9 @@ func TestYearPageIsFourMonthsARowAndWide(t *testing.T) {
 	if !strings.Contains(yearCSS, "repeat(4,minmax(0,1fr))") {
 		t.Error("the year page must lay out four months a row")
 	}
+	if !strings.Contains(yearCSS, ".ko-ymonth .ko-mcal{--ko-row:.3rem}") {
+		t.Error("the row height must be set on .ko-mcal, where the month page sets it (a value on an ancestor is overridden)")
+	}
 	src, err := os.ReadFile("yearcal.go")
 	if err != nil {
 		t.Fatal(err)

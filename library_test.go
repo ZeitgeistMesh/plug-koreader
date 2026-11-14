@@ -62,7 +62,7 @@ func TestLibraryFilterKeepsOnlyReadBooksAndTheSameColumns(t *testing.T) {
 func TestLibraryTitleIsEscapedOnce(t *testing.T) {
 	e := CatalogEntry{ID: "u", Title: "&#40;Kate Daniels 1&#41;", Authors: "Andrews &amp; Ilona"}
 	rows, _ := libraryRows(buildLibrary([]CatalogEntry{e}, nil), webui.ListQuery{Page: 1, PageSize: 25}, false)
-	if got := string(rows[0]["title"]); got != "(Kate Daniels 1)" {
+	if got := string(rows[0]["title"]); !strings.Contains(got, ">(Kate Daniels 1)<") || strings.Contains(got, "&amp;#") {
 		t.Errorf("title = %q", got)
 	}
 	if got := string(rows[0]["authors"]); got != "Andrews &amp; Ilona" {
@@ -97,5 +97,31 @@ func TestLibraryActionsAreOneButtonGroup(t *testing.T) {
 	h := string(rows[0]["formats"])
 	if !strings.Contains(h, `class="rd-acts"`) || !strings.Contains(h, `class="btn-group"`) || strings.Count(h, `class="btn `) != 2 {
 		t.Errorf("actions = %s", h)
+	}
+}
+
+// The entities are undone until the text stops changing: "&amp;#40;" (escaped twice) becomes "(".
+func TestLibraryTitleDoubleEscapedByTheFeed(t *testing.T) {
+	e := CatalogEntry{ID: "u", Title: "&amp;#40;Kate Daniels 1&amp;#41; Andrews, Ilona - Magic Bites"}
+	rows, _ := libraryRows(buildLibrary([]CatalogEntry{e}, nil), webui.ListQuery{Page: 1, PageSize: 25}, false)
+	got := string(rows[0]["title"])
+	if strings.Contains(got, "#40") || strings.Contains(got, "#41") || !strings.Contains(got, ">(Kate Daniels 1) Andrews") {
+		t.Errorf("title = %s", got)
+	}
+	if unescapeOnce("a &lt; b") != "a < b" || unescapeOnce("plain") != "plain" {
+		t.Error("single layer and plain text")
+	}
+}
+
+// A long title is clamped to two lines (full text is the tooltip) and the action cell fits its content.
+func TestLibraryRowsStayEvenHeight(t *testing.T) {
+	rows, _ := libraryRows(buildLibrary([]CatalogEntry{{ID: "u", Title: strings.Repeat("Long ", 30)}}, nil), webui.ListQuery{Page: 1, PageSize: 25}, false)
+	if got := string(rows[0]["title"]); !strings.Contains(got, `class="rd-title" title="Long Long`) {
+		t.Errorf("title = %s", got)
+	}
+	for _, want := range []string{"-webkit-line-clamp:2", "td[data-k=formats]{width:1%;white-space:nowrap;text-align:right}"} {
+		if !strings.Contains(readerBooksCSS, want) {
+			t.Errorf("CSS lacks %s", want)
+		}
 	}
 }

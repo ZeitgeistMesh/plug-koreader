@@ -176,7 +176,8 @@ const yearCSS = `<style>
 .ko-ygrid{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--sp-3) var(--sp-4);margin-top:var(--sp-2)}
 @media (min-width: 36rem){.ko-ygrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (min-width: 64rem){.ko-ygrid{grid-template-columns:repeat(4,minmax(0,1fr))}}
-.ko-ymonth{min-width:0;--ko-row:.3rem}
+.ko-ymonth{min-width:0}
+.ko-ymonth .ko-mcal{--ko-row:.3rem}
 .ko-ymonth h3{margin:0 0 var(--sp-1);font-size:.9rem}
 .ko-ymonth h3 a{color:var(--text-hi);text-decoration:none}
 .ko-ymonth .ko-mhead{font-size:.65rem}

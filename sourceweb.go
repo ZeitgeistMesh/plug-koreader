@@ -33,8 +33,10 @@ const (
 const readerBooksCSS = `
 .rd-cover{display:block;height:calc(var(--sp-6) + var(--sp-4));width:auto}
 .rd-status{margin-block:var(--sp-3)}
-.rd-acts .btn-group{max-width:none}
+.rd-acts .btn-group{max-width:none;margin-left:auto}
 .rd-acts .btn{white-space:nowrap}
+.rd-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden}
+@media (min-width: 641px){#lv-books td[data-k=formats]{width:1%;white-space:nowrap;text-align:right}}
 .rd-form{display:flex;flex-direction:column;gap:var(--sp-3)}
 .rd-field{display:flex;flex-direction:column;gap:var(--sp-1)}
 .rd-field label{margin:0}
