@@ -83,3 +83,27 @@ func TestAPDFPlaceFromADeviceIsHandedToThePageAsAPercentage(t *testing.T) {
 		}
 	}
 }
+
+// A page turn saves the page it lands on, not the one it leaves (live proof, 14 Nov: Next then leave left
+// the stored page at 0), and a save made as the page goes away must survive the unload.
+func TestAPDFPageTurnSavesTheNewPageAndSurvivesUnload(t *testing.T) {
+	js := readerPDFJS
+	goFn := js[strings.Index(js, "function go(n,frac)"):]
+	goFn = goFn[:strings.Index(goFn, "\n")]
+	if strings.Contains(goFn, "send()") {
+		t.Errorf("go() saves before it has moved, so Next posts the page it is leaving: %s", goFn)
+	}
+	if !strings.Contains(js, "show(now());send();});") {
+		t.Error("the page just drawn is not saved once it is on screen")
+	}
+	if !strings.Contains(js, "keepalive:!!keep") || !strings.Contains(js, "title:d.title},true)") {
+		t.Error("the progress save does not use keepalive, so the browser cancels it on unload")
+	}
+	if !strings.Contains(js, "visibilitychange") {
+		t.Error("nothing saves when the tab is hidden")
+	}
+	// A hidden tab gets no animation frames, which the display intent waits for.
+	if !strings.Contains(js, "intent:document.hidden?'print':'display'") {
+		t.Error("a hidden tab never draws: use the print intent while hidden")
+	}
+}
