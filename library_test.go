@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"xf/controller/pkg/webui"
 )
@@ -46,7 +47,7 @@ func TestLibraryFilterKeepsOnlyReadBooksAndTheSameColumns(t *testing.T) {
 			}
 		}
 	}
-	if !strings.Contains(string(read[0]["title"]), "/quote?book=m1") || !strings.Contains(string(read[0]["formats"]), "> Read<") {
+	if !strings.Contains(string(read[0]["quotes"]), "/quote?book=m1") || strings.Contains(string(read[0]["title"]), "href") || !strings.Contains(string(read[0]["formats"]), "> Read<") {
 		t.Errorf("a book read AND on the server shows both sides: %v", read[0])
 	}
 	if strings.Contains(string(read[1]["formats"]), "btn") {
@@ -54,5 +55,47 @@ func TestLibraryFilterKeepsOnlyReadBooksAndTheSameColumns(t *testing.T) {
 	}
 	if sw := string(librarySwitch(libShowRead)); !strings.Contains(sw, "show=read") || !strings.Contains(sw, `hx-target="#lv-books"`) {
 		t.Errorf("the filter must be the house switch swapping the list: %s", sw)
+	}
+}
+
+// Owner via master, plan 26856ccd: a title the feed escaped twice printed as "&#40;Kate Daniels 1&#41;".
+func TestLibraryTitleIsEscapedOnce(t *testing.T) {
+	e := CatalogEntry{ID: "u", Title: "&#40;Kate Daniels 1&#41;", Authors: "Andrews &amp; Ilona"}
+	rows, _ := libraryRows(buildLibrary([]CatalogEntry{e}, nil), webui.ListQuery{Page: 1, PageSize: 25}, false)
+	if got := string(rows[0]["title"]); got != "(Kate Daniels 1)" {
+		t.Errorf("title = %q", got)
+	}
+	if got := string(rows[0]["authors"]); got != "Andrews &amp; Ilona" {
+		t.Errorf("authors = %q (one layer of escaping, for the page)", got)
+	}
+}
+
+// A reading with no title says so, rather than "Untitled" beside a stranger.
+func TestLibraryUnnamedReadingIsExplained(t *testing.T) {
+	rows, _ := libraryRows(buildLibrary(nil, []BookShelf{{MD5: "z", Title: "", Authors: "human", Seconds: 600}}), webui.ListQuery{Page: 1, PageSize: 25}, false)
+	if got := string(rows[0]["title"]); !strings.Contains(got, libUnnamed) || !strings.Contains(got, "data-tip") || strings.Contains(got, "Untitled") {
+		t.Errorf("title cell = %s", got)
+	}
+}
+
+// One statement: "Updated 20 h ago" with a spinner, never "Updating… Updated 20 h ago".
+func TestCatalogStatusIsOneStatement(t *testing.T) {
+	c := &Catalog{RefreshedAt: time.Now().Add(-20 * time.Hour).Format(time.RFC3339)}
+	got := catalogStatus(c, true)
+	if strings.Contains(got, "Updating") || !strings.Contains(got, "Updated 20 h ago") || !strings.Contains(got, "fa-spin") {
+		t.Errorf("status = %s", got)
+	}
+	if got := catalogStatus(&Catalog{}, true); !strings.Contains(got, "Updating") {
+		t.Errorf("with no earlier update, say Updating: %s", got)
+	}
+}
+
+// The Read and download buttons stand side by side in one house ButtonGroup that does not wrap.
+func TestLibraryActionsAreOneButtonGroup(t *testing.T) {
+	e := CatalogEntry{ID: "u", Title: "Dune", Files: []BookFile{{Type: "application/epub+zip", Href: "/x"}}}
+	rows, _ := libraryRows(buildLibrary([]CatalogEntry{e}, nil), webui.ListQuery{Page: 1, PageSize: 25}, false)
+	h := string(rows[0]["formats"])
+	if !strings.Contains(h, `class="rd-acts"`) || !strings.Contains(h, `class="btn-group"`) || strings.Count(h, `class="btn `) != 2 {
+		t.Errorf("actions = %s", h)
 	}
 }

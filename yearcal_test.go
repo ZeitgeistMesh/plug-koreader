@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"image/png"
 	"strings"
 	"testing"
@@ -87,5 +88,19 @@ func TestYearPNGIsAValidPictureAndFast(t *testing.T) {
 	empty, _ := yearPNG(idx, loc, 2025, time.Date(2026, 11, 14, 12, 0, 0, 0, loc))
 	if bytes.Equal(body, empty) {
 		t.Error("the picture does not depend on the year")
+	}
+}
+
+// Owner via master: the year is seen at once, four months a row in the wide column.
+func TestYearPageIsFourMonthsARowAndWide(t *testing.T) {
+	if !strings.Contains(yearCSS, "repeat(4,minmax(0,1fr))") {
+		t.Error("the year page must lay out four months a row")
+	}
+	src, err := os.ReadFile("yearcal.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), "flowweb.WidthWide") {
+		t.Error("the year page needs the wide column")
 	}
 }

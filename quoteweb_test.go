@@ -401,11 +401,16 @@ func TestBookRowsOnlyLinkBooksThatHaveQuotes(t *testing.T) {
 	if total != 2 {
 		t.Fatalf("total = %d, want 2", total)
 	}
-	if !strings.Contains(string(rows[0]["title"]), `href="/quote?book=aaa"`) {
-		t.Errorf("the book with quotes is not linked: %s", rows[0]["title"])
+	if !strings.Contains(string(rows[0]["quotes"]), `href="/quote?book=aaa"`) {
+		t.Errorf("the book with quotes is not linked: %s", rows[0]["quotes"])
 	}
-	if strings.Contains(string(rows[1]["title"]), "href") {
-		t.Errorf("a book with no quotes must not link into the reader: %s", rows[1]["title"])
+	if strings.Contains(string(rows[1]["quotes"]), "href") {
+		t.Errorf("a book with no quotes must not link into the reader: %s", rows[1]["quotes"])
+	}
+	for _, r := range rows {
+		if strings.Contains(string(r["title"]), "href") {
+			t.Errorf("a title is plain text in every row: %s", r["title"])
+		}
 	}
 }
 

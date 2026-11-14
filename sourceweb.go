@@ -33,6 +33,8 @@ const (
 const readerBooksCSS = `
 .rd-cover{display:block;height:calc(var(--sp-6) + var(--sp-4));width:auto}
 .rd-status{margin-block:var(--sp-3)}
+.rd-acts .btn-group{max-width:none}
+.rd-acts .btn{white-space:nowrap}
 .rd-form{display:flex;flex-direction:column;gap:var(--sp-3)}
 .rd-field{display:flex;flex-direction:column;gap:var(--sp-1)}
 .rd-field label{margin:0}
@@ -200,9 +202,6 @@ func cmpText(a, b string, desc bool) bool {
 
 func catalogStatus(c *Catalog, refreshing bool) string {
 	var parts []string
-	if refreshing {
-		parts = append(parts, ui.ReadingLine)
-	}
 	if c != nil {
 		if c.Error != "" {
 			parts = append(parts, fill(ui.FailedLine, "problem", c.Error))
@@ -214,10 +213,19 @@ func catalogStatus(c *Catalog, refreshing bool) string {
 			parts = append(parts, fill(ui.TruncatedLine, "n", fmt.Sprint(len(c.Entries))))
 		}
 	}
+	// One statement, not two: "Updated 20 h ago" with a spinner while a refresh runs. The words "Updating…"
+	// only appear when there is no earlier update to report (owner via master, plan 26856ccd).
+	spin := ""
+	if refreshing {
+		spin = `<i class="fa-solid fa-rotate fa-spin" aria-hidden="true"></i> `
+		if len(parts) == 0 {
+			parts = append(parts, ui.ReadingLine)
+		}
+	}
 	if len(parts) == 0 {
 		return ""
 	}
-	return `<p class="hint rd-status" role="status">` + html.EscapeString(strings.Join(parts, " ")) + `</p>`
+	return `<p class="hint rd-status" role="status">` + spin + html.EscapeString(strings.Join(parts, " ")) + `</p>`
 }
 
 func ago(d time.Duration) string {

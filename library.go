@@ -32,6 +32,8 @@ const (
 	libTabRead   = "Read"
 	libEmptyRead = "Nothing read yet. Sync a reader and the books you have read appear here."
 	libSwitchAria = "Which books"
+	libUnnamed    = "Unnamed book"
+	libUnnamedTip = "Your reader sent this reading without a title, so it cannot be matched to a book on your server."
 )
 
 // libBook is one row: the catalog entry (nil when the server does not hold it) and what was read
@@ -41,16 +43,21 @@ type libBook struct {
 	Shelf *BookShelf
 }
 
+// unescapeOnce undoes one layer of HTML entities. A book server's feed can carry a title that was escaped
+// twice ("&#40;Kate Daniels 1&#41;"), which the page then escaped a third time and printed as code
+// (owner via master, plan 26856ccd); the text is made plain once here and escaped once when drawn.
+func unescapeOnce(s string) string { return html.UnescapeString(s) }
+
 func (b libBook) title() string {
 	if b.Entry != nil {
-		return b.Entry.Title
+		return unescapeOnce(b.Entry.Title)
 	}
 	return b.Shelf.Title
 }
 
 func (b libBook) authors() string {
 	if b.Entry != nil && strings.TrimSpace(b.Entry.Authors) != "" {
-		return b.Entry.Authors
+		return unescapeOnce(b.Entry.Authors)
 	}
 	if b.Shelf != nil {
 		return b.Shelf.Authors
@@ -73,7 +80,7 @@ func buildLibrary(entries []CatalogEntry, shelves []BookShelf) []libBook {
 	out := make([]libBook, 0, len(entries)+len(shelves))
 	for i := range entries {
 		b := libBook{Entry: &entries[i]}
-		if si, ok := byTitle[normTitle(displayTitle(entries[i].Title))]; ok && !used[si] {
+		if si, ok := byTitle[normTitle(displayTitle(unescapeOnce(entries[i].Title)))]; ok && !used[si] {
 			used[si] = true
 			s := shelves[si]
 			b.Shelf = &s
@@ -177,9 +184,22 @@ func libraryRows(books []libBook, q webui.ListQuery, read bool) ([]webui.Row, in
 	return rows, total
 }
 
+func btnHTML(in []string) []template.HTML {
+	out := make([]template.HTML, len(in))
+	for i, h := range in {
+		out[i] = template.HTML(h)
+	}
+	return out
+}
+
 func libraryRow(b libBook) webui.Row {
 	cover := webui.Text("")
 	title := webui.Text(displayTitle(b.title()))
+	if strings.TrimSpace(b.title()) == "" {
+		// A reading the device sent with no title cannot be matched to a book on the server. Say so,
+		// rather than a bare "Untitled" beside an author nobody recognises.
+		title = template.HTML(`<span class="muted" data-tip="` + html.EscapeString(libUnnamedTip) + `">` + html.EscapeString(libUnnamed) + `</span>`)
+	}
 	var buttons []string
 	if e := b.Entry; e != nil {
 		key := entryKey(e.ID)
@@ -198,16 +218,20 @@ func libraryRow(b libBook) webui.Row {
 		}
 	}
 	dash := webui.Text("—")
+	acts := webui.Text("")
+	if len(buttons) > 0 {
+		acts = template.HTML(`<div class="rd-acts">` + string(webui.ButtonGroup(btnHTML(buttons)...)) + `</div>`)
+	}
 	row := webui.Row{
 		"cover": cover, "title": title, "authors": webui.Text(b.authors()),
 		"quotes": dash, "time": dash, "pages": dash, "days": dash,
-		"formats": template.HTML(`<div class="field-row">` + strings.Join(buttons, "") + `</div>`),
+		"formats": acts,
 	}
 	if s := b.Shelf; s != nil {
-		// Only a book with quotes links into the quote reader: a link that opens an empty reader is worse than none.
+		// The title is plain text in every row, whichever filter shows it. The way into a book's quotes is its
+		// Quotes count, and only a book with quotes has one: a link that opens an empty reader is worse than none.
 		if s.Highlights > 0 {
-			row["title"] = template.HTML(fmt.Sprintf(`<a href="/quote?book=%s">%s</a>`, url.QueryEscape(s.MD5), title))
-			row["quotes"] = webui.Text(fmt.Sprintf("%d", s.Highlights))
+			row["quotes"] = template.HTML(fmt.Sprintf(`<a href="/quote?book=%s">%d</a>`, url.QueryEscape(s.MD5), s.Highlights))
 		}
 		row["time"] = webui.Text(humanDuration(s.Seconds))
 		row["pages"] = webui.Text(fmt.Sprintf("%d", s.Pages))

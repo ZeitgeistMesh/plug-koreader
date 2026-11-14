@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"xf/controller/pkg/flowweb"
 	"xf/controller/pkg/webui"
 )
 
@@ -166,14 +167,23 @@ func renderYear(idx *readingIndex, loc *time.Location, year int, now time.Time) 
 	return template.HTML(b.String())
 }
 
+// yearCSS lays the twelve months out four to a row, as the picture does, so a year can be seen at once.
+// The month cell keeps its style (box, bars, histogram); only its size changes: the lanes and the
+// histogram row are thin, and a bar's label is dropped (its book is the tooltip), since at this size
+// the label could not be read anyway. Below 64rem it is two a row, and one on a phone.
 const yearCSS = `<style>
 .ko-yearbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--sp-2);margin:0 0 var(--sp-3)}
-.ko-ygrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(19rem,1fr));gap:var(--sp-4);margin-top:var(--sp-3)}
-.ko-ymonth{min-width:0}
-.ko-ymonth h3{margin:0 0 var(--sp-2);font-size:1rem}
+.ko-ygrid{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--sp-3) var(--sp-4);margin-top:var(--sp-2)}
+@media (min-width: 36rem){.ko-ygrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (min-width: 64rem){.ko-ygrid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.ko-ymonth{min-width:0;--ko-row:.3rem}
+.ko-ymonth h3{margin:0 0 var(--sp-1);font-size:.9rem}
 .ko-ymonth h3 a{color:var(--text-hi);text-decoration:none}
-.ko-ymonth .ko-dn{font-size:.7rem}
-.ko-ymonth .ko-bar{font-size:.6rem}
+.ko-ymonth .ko-mhead{font-size:.65rem}
+.ko-ymonth .ko-week{row-gap:1px;padding-bottom:0;grid-template-rows:auto repeat(4,var(--ko-row)) calc(var(--ko-row)*2)}
+.ko-ymonth .ko-dn{font-size:.65rem;line-height:1.2;padding:var(--sp-0) var(--sp-0) 0}
+.ko-ymonth .ko-bar{font-size:0;line-height:0;padding:0;border-left-width:2px}
+.ko-ymonth .ko-ticks{height:auto;margin:0 1px 1px}
 </style>`
 
 func (a *app) serveYear(w http.ResponseWriter, r *http.Request) {
@@ -191,6 +201,7 @@ func (a *app) serveYear(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	year := parseYear(r.URL.Query().Get("y"), idx, loc, now)
 	p := a.page("/year")
+	p.Width = flowweb.WidthWide
 	p.CSS += koCalCSS() + yearCSS
 	p.StartFor(w, r, yearTitle)
 	fmt.Fprint(w, renderYear(idx, loc, year, now))
