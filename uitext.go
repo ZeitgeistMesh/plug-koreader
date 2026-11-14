@@ -24,6 +24,7 @@ type uiText struct {
 	ReadLink, ReadTip, ContentsHeading, ChapterFallback, Prev, Next             string
 	SaveQuote, QuoteSaved, QuoteFailed, PercentRead                             string
 	ErrNotEpub, ErrOpen, ErrNoChapter                                           string
+	PdfPage, PdfCantDraw, PdfLoading                                            string
 }
 
 var ui = uiText{
@@ -100,4 +101,7 @@ var ui = uiText{
 	ErrNotEpub:      "Reader can't open this format yet.",
 	ErrOpen:         "Reader couldn't open this book: {why}",
 	ErrNoChapter:    "This chapter doesn't exist.",
+	PdfPage:         "Page {n}",
+	PdfCantDraw:     "This PDF could not be drawn here. Download it instead.",
+	PdfLoading:      "Opening the PDF…",
 }

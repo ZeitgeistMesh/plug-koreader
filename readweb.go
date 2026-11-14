@@ -132,6 +132,13 @@ func (a *app) serveBookRead(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// An entry with no EPUB but a PDF opens in the same reader, drawn by pdf.js (pdfread.go).
+	if _, isEpub := epubFile(e); !isEpub {
+		if pi, isPDF := pdfFile(e); isPDF {
+			a.servePDFRead(w, r, tk, s, e, pi)
+			return
+		}
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
 	b, md5, fidx, err := a.openBook(ctx, tk, s, e)

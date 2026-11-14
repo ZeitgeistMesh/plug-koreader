@@ -222,7 +222,7 @@ func libraryRow(b libBook) webui.Row {
 		}
 		// Read and each download are the same house button, in one row with the house gap
 		// (owner, plan 26856ccd: the EPUB link sat tight against Read, in another theme).
-		if _, ok := epubFile(e); ok {
+		if readableFile(e) {
 			buttons = append(buttons, string(webui.IconTextButton("fa-solid fa-book-open-reader", ui.ReadLink,
 				webui.BtnOpts{Kind: "secondary", Size: "sm", Href: booksPath + "/read?id=" + key, Attrs: ` hx-boost="false" data-tip="` + html.EscapeString(ui.ReadTip) + `"`})))
 		}

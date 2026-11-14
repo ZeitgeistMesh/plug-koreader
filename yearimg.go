@@ -20,15 +20,15 @@ import (
 )
 
 const (
-	imgU        = 2    // device pixels per layout unit: the picture is drawn at 2x so small text stays sharp
-	imgW        = 1200 // layout units
-	imgMargin   = 40
-	imgCols     = 4
-	imgCellW    = 34
-	imgCellH    = 48
-	imgCellGap  = 2
-	imgMonthW   = 7*imgCellW + 6*imgCellGap
-	imgMonthGap = (imgW - 2*imgMargin - imgCols*imgMonthW) / (imgCols - 1)
+	imgU       = 2   // device pixels per layout unit: the picture is drawn at 2x so small text stays sharp
+	imgW       = 900 // layout units
+	imgMargin  = 40
+	imgCellGap = 2
+	imgCellW   = (imgW - 2*imgMargin - 6*imgCellGap) / 7 // one month per row, the full width: a box as wide as the month page's
+	imgLane    = 10                                      // a book's bar and the room it takes
+	imgNumH    = 13                                      // the day number's line
+	imgTickH   = 12                                      // the foot: the hours histogram
+	imgCellH   = imgNumH + maxLanes*imgLane + imgTickH + 2
 )
 
 // The house palette (dark theme), as the page's tokens resolve there.
@@ -125,8 +125,15 @@ func fit(s string, n int) string {
 func yearPNG(idx *readingIndex, loc *time.Location, year int, now time.Time) ([]byte, error) {
 	st := buildYearStats(idx, loc, year)
 	const head = 36 + 35 + 14 + 62 + 26
-	monthH := 14 + 6 + 7 + 4 + 6*(imgCellH+imgCellGap)
-	months := 3 * (monthH + 20)
+	const monthHead = 14 + 6 + 7 + 4 // the month's name, then the weekday names
+	const monthGap = 22
+	// A month is as tall as its weeks, so one of four weeks takes less room than one of six.
+	cals := make([]monthCal, 12)
+	months := 0
+	for m := 1; m <= 12; m++ {
+		cals[m-1] = buildMonthCal(idx, loc, time.Date(year, time.Month(m), 1, 0, 0, 0, 0, loc), now)
+		months += monthHead + len(cals[m-1].Weeks)*(imgCellH+imgCellGap) + monthGap
+	}
 	foot := 14 + 8 + len(st.Top)*18 + 40
 	if len(st.Top) == 0 {
 		foot = 40
@@ -141,7 +148,7 @@ func yearPNG(idx *readingIndex, loc *time.Location, year int, now time.Time) ([]
 	tiles := [][2]string{
 		{fmt.Sprint(st.Days), "DAYS READ"}, {fmt.Sprintf("%.0f", float64(st.Seconds)/3600), "HOURS"},
 		{fmt.Sprint(st.Books), "BOOKS"}, {fmt.Sprint(st.Pages), "PAGES"},
-		{fmt.Sprint(st.Quotes), "QUOTES"}, {fmt.Sprint(st.Streak), "BEST STREAK"},
+		{fmt.Sprint(st.Quotes), "QUOTES"}, {fmt.Sprint(st.Streak), "STREAK"},
 	}
 	tw := (imgW - 2*imgMargin - 5*12) / 6
 	for i, t := range tiles {
@@ -152,31 +159,30 @@ func yearPNG(idx *readingIndex, loc *time.Location, year int, now time.Time) ([]
 		c.text(x+10, y+42, 2, t[1], imgMuted)
 	}
 
-	// The twelve months.
-	y0 := head
+	// The twelve months, one to a row, each the month page's calendar at the full width.
+	y := head
 	for m := 1; m <= 12; m++ {
-		col, row := (m-1)%imgCols, (m-1)/imgCols
-		x := imgMargin + col*(imgMonthW+imgMonthGap)
-		y := y0 + row*(monthH+20)
-		mc := buildMonthCal(idx, loc, time.Date(year, time.Month(m), 1, 0, 0, 0, 0, loc), now)
+		mc := cals[m-1]
+		x := imgMargin
 		c.text(x, y, 2, time.Month(m).String(), imgText)
-		c.text(x+imgMonthW-textW(fmt.Sprintf("%d MIN", mc.Minutes), 1), y+4, 1, fmt.Sprintf("%d MIN", mc.Minutes), imgMuted)
+		minTxt := fmt.Sprintf("%d MIN", mc.Minutes)
+		c.text(imgW-imgMargin-textW(minTxt, 1), y+4, 1, minTxt, imgMuted)
 		hy := y + 14 + 6
 		for d, n := range calDayNames {
 			c.text(x+d*(imgCellW+imgCellGap)+(imgCellW-textW(n, 1))/2, hy, 1, n, imgMuted)
 		}
 		for wi, w := range mc.Weeks {
-			wy := hy + 7 + 4 + wi*(imgCellH+imgCellGap)
-			drawWeek(c, x, wy, w)
+			drawWeek(c, x, hy+7+4+wi*(imgCellH+imgCellGap), w)
 		}
+		y += monthHead + len(mc.Weeks)*(imgCellH+imgCellGap) + monthGap
 	}
 
 	// The most-read books.
 	if len(st.Top) > 0 {
-		y := y0 + months + 6
+		y += 6
 		c.text(imgMargin, y, 2, "MOST READ", imgMuted)
 		for i, b := range st.Top {
-			line := fmt.Sprintf("%d. %s", i+1, fit(displayTitle(b.Title), 70))
+			line := fmt.Sprintf("%d. %s", i+1, fit(displayTitle(b.Title), (imgW-2*imgMargin)/12-14))
 			ly := y + 14 + 8 + i*18
 			c.text(imgMargin, ly, 2, line, imgText)
 			t := humanDuration(b.Seconds)
@@ -208,27 +214,30 @@ func drawWeek(c *canvas, x, y int, w calWeek) {
 		}
 		c.stroke(bx, y, imgCellW, imgCellH, border)
 		c.text(bx+3, y+3, 1, fmt.Sprint(d.Num), num)
-		// The foot of the box: 24 hours, midnight to midnight, a pixel column each.
-		base := y + imgCellH - 2
+		// The foot of the box: 24 hours, midnight to midnight, a column each across the box.
+		base := (y + imgCellH - 2) * imgU
+		colW := (imgCellW - 10) * imgU / 24
 		for h, k := range d.Ticks {
-			tx := (bx + 5) * imgU + h*imgU
+			tx := (bx+5)*imgU + h*colW
 			if k == 0 {
 				if d.Minutes > 0 {
-					c.px(tx, base*imgU-1, imgU, 1, blend(imgMuted, imgCard, 30))
+					c.px(tx, base-1, colW-1, 1, blend(imgMuted, imgCard, 30))
 				}
 				continue
 			}
-			th := []int{0, 25, 50, 75, 100}[k] * 10 * imgU / 100
-			c.px(tx, base*imgU-th, imgU, th, imgMuted)
+			th := []int{0, 25, 50, 75, 100}[k] * (imgTickH - 2) * imgU / 100
+			c.px(tx, base-th, colW-1, th, imgMuted)
 		}
 	}
 	for _, b := range w.Bars {
 		bx := cx(b.Col) + 1
 		bw := cx(b.Col+b.Span-1) + imgCellW - 1 - bx
-		by := y + 13 + (b.Lane-1)*6
+		by := y + imgNumH + (b.Lane-1)*imgLane
 		tone := imgTones[b.Tone%calTones]
-		c.rect(bx, by, bw, 5, blend(tone, imgCard, 35))
-		c.rect(bx, by, 2, 5, tone)
+		c.rect(bx, by, bw, imgLane-2, blend(tone, imgCard, 35))
+		c.rect(bx, by, 3, imgLane-2, tone)
+		// The book's title, as the page prints it on the bar, cut to what the bar can hold.
+		c.text(bx+6, by+1, 1, fit(displayTitle(b.Title), (bw-8)/6), imgText)
 	}
 }
 

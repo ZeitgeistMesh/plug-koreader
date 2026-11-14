@@ -81,7 +81,7 @@ func TestYearPNGIsAValidPictureAndFast(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b := img.Bounds(); b.Dx() != imgW*imgU || b.Dy() < 2000 {
+	if b := img.Bounds(); b.Dx() != imgW*imgU || b.Dy() < 6000 {
 		t.Errorf("size = %v", b)
 	}
 	// Different data draws different pixels: a year with reading differs from an empty one.
@@ -91,19 +91,21 @@ func TestYearPNGIsAValidPictureAndFast(t *testing.T) {
 	}
 }
 
-// Owner via master: the year is seen at once, four months a row in the wide column.
-func TestYearPageIsFourMonthsARowAndWide(t *testing.T) {
-	if !strings.Contains(yearCSS, "repeat(4,minmax(0,1fr))") {
-		t.Error("the year page must lay out four months a row")
+// Owner (dab02a73, comment 1430b888): one month per row, like the calendar, never four to a row.
+func TestYearPageIsOneMonthPerRowAtTheMonthPagesSize(t *testing.T) {
+	for _, bad := range []string{"repeat(4,", "repeat(2,", ".ko-ymonth .ko-mcal", ".ko-ymonth .ko-week", ".ko-ymonth .ko-bar", "min-width: 64rem"} {
+		if strings.Contains(yearCSS, bad) {
+			t.Errorf("the year page still resizes a month: %q", bad)
+		}
 	}
-	if !strings.Contains(yearCSS, ".ko-ymonth .ko-mcal{--ko-row:.3rem}") {
-		t.Error("the row height must be set on .ko-mcal, where the month page sets it (a value on an ancestor is overridden)")
+	if !strings.Contains(yearCSS, ".ko-ygrid{display:grid;grid-template-columns:minmax(0,1fr)") {
+		t.Error("the year page must be one column of months")
 	}
 	src, err := os.ReadFile("yearcal.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(src), "flowweb.WidthWide") {
-		t.Error("the year page needs the wide column")
+	if strings.Contains(string(src), "flowweb.WidthWide") {
+		t.Error("the year page must use the calendar page's own width, or its boxes are not the month page's size")
 	}
 }
