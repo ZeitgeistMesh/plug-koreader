@@ -225,7 +225,7 @@ func renderMonthCal(c monthCal) template.HTML {
 	fmt.Fprintf(&b, `<span class="ko-calmonth">%s</span>`, monthTitle(c.Month))
 	nav("fa-solid fa-angle-right", calNextMonth, c.Next)
 	nav("fa-solid fa-angles-right", calNextYear, c.NextY)
-	b.WriteString(string(webui.IconTextButton("fa-solid fa-table-cells", calYearView, webui.BtnOpts{Size: "sm", Href: "/"})))
+	b.WriteString(string(webui.IconTextButton("fa-solid fa-table-cells", calYearView, webui.BtnOpts{Size: "sm", Href: "/year?y=" + c.Month[:4]})))
 	b.WriteString(`</div>`)
 	if c.Books == 0 {
 		fmt.Fprintf(&b, `<p class="muted">%s</p>`, calEmptyMonth)
@@ -234,6 +234,14 @@ func renderMonthCal(c monthCal) template.HTML {
 	} else {
 		fmt.Fprintf(&b, `<p class="muted">%s</p>`, fmt.Sprintf(calSummary, c.Minutes, c.Books))
 	}
+	b.WriteString(string(renderMonthGrid(c)))
+	b.WriteString(`</div>`)
+	return template.HTML(b.String())
+}
+
+// renderMonthGrid is the weekday header and the weeks of one month: the month page shows one, the year page twelve.
+func renderMonthGrid(c monthCal) template.HTML {
+	var b strings.Builder
 	b.WriteString(`<div class="ko-mcal"><div class="ko-mhead">`)
 	for _, n := range calDayNames {
 		fmt.Fprintf(&b, `<span>%s</span>`, n)
@@ -287,7 +295,7 @@ func renderMonthCal(c monthCal) template.HTML {
 		}
 		b.WriteString(`</div>`)
 	}
-	b.WriteString(`</div></div>`)
+	b.WriteString(`</div>`)
 	return template.HTML(b.String())
 }
 

@@ -178,6 +178,8 @@ func main() {
 			mux.HandleFunc("/", a.serveReadingRoot)
 			mux.HandleFunc("/day", a.serveDay)
 			mux.HandleFunc("/calendar", a.serveCalendar)
+			mux.HandleFunc("/year", a.serveYear)
+			mux.HandleFunc("/year.png", a.serveYearImage)
 			// /quotes, /quote and the browser's action route: the shared quote
 			// browser (quotebrowse.go), mounted rather than written here.
 			a.quoteView().Mount(mux, a.webGate, a.page)
