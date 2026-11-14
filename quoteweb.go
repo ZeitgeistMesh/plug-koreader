@@ -9,14 +9,7 @@ package main
 
 import (
 	"fmt"
-	"html/template"
-	"net/http"
-	"net/url"
-	"sort"
 	"strings"
-
-	"xf/controller/pkg/flowweb"
-	"xf/controller/pkg/webui"
 )
 
 // BookShelf is one book, summarised over everything that has synced for it.
@@ -85,131 +78,6 @@ func shelf(idx *readingIndex) []BookShelf {
 		out = append(out, *b)
 	}
 	return out
-}
-
-// serveBooks is the by-book browser.
-func (a *app) serveBooks(w http.ResponseWriter, r *http.Request) {
-	caller, ok := a.webGate(w, r)
-	if !ok {
-		return
-	}
-	tk := tenant(caller)
-	idx, err := a.readingIndexFor(r.Context(), caller, tk)
-	if err != nil {
-		http.Error(w, "could not read your reading", http.StatusInternalServerError)
-		return
-	}
-
-	view := booksListView()
-	q := view.ParseListQuery(r)
-	rows, total := bookRows(shelf(idx), q, func(b BookShelf) string { return a.bookReadLink(r.Context(), caller, b.MD5, b.Title) })
-
-	if flowweb.WantsFragment(r) && r.Method == http.MethodGet {
-		view.RenderFragment(w, q, rows, total)
-		return
-	}
-	p := a.page(readingPath)
-	p.StartFor(w, r, "Books")
-	view.Render(w, q, rows, total)
-	p.End(w)
-}
-
-func booksListView() webui.ListView {
-	return webui.ListView{
-		Action:            readingPath,
-		RootID:            "lv-books",
-		SearchPlaceholder: "Search your books…",
-		EmptyText:         "No book matches that.",
-		PageSizes:         []int{25, 50, 100},
-		Columns: []webui.Column{
-			{Key: "title", Label: "Book", Sortable: true},
-			{Key: "quotes", Label: "Quotes", Sortable: true, Numeric: true},
-			{Key: "time", Label: "Time", Sortable: true, Numeric: true, Priority: 1},
-			{Key: "pages", Label: "Pages", Sortable: true, Numeric: true, Priority: 2},
-			{Key: "days", Label: "Days", Sortable: true, Numeric: true, Priority: 3},
-			{Key: "read", Label: ""},
-		},
-	}
-}
-
-// readHref is the in-app reader address for a book, or "" when the catalog has no EPUB of it (nil: none).
-func bookRows(books []BookShelf, q webui.ListQuery, readHref func(BookShelf) string) ([]webui.Row, int) {
-	needle := strings.ToLower(strings.TrimSpace(q.Search))
-	filtered := make([]BookShelf, 0, len(books))
-	for _, b := range books {
-		if needle != "" && !strings.Contains(strings.ToLower(b.Title+" "+b.Authors), needle) {
-			continue
-		}
-		filtered = append(filtered, b)
-	}
-
-	// Default: most-highlighted first. The page exists to reach quotes, so the book you
-	// have marked up most is the one most likely to be wanted.
-	less := func(i, j int) bool {
-		if filtered[i].Highlights != filtered[j].Highlights {
-			return filtered[i].Highlights > filtered[j].Highlights
-		}
-		return filtered[i].Seconds > filtered[j].Seconds
-	}
-	switch q.Sort {
-	case "title":
-		less = func(i, j int) bool {
-			a, b := strings.ToLower(filtered[i].Title), strings.ToLower(filtered[j].Title)
-			if q.Desc {
-				return a > b
-			}
-			return a < b
-		}
-	case "quotes":
-		less = func(i, j int) bool { return cmpInt(filtered[i].Highlights, filtered[j].Highlights, q.Desc) }
-	case "time":
-		less = func(i, j int) bool { return cmpInt(filtered[i].Seconds, filtered[j].Seconds, q.Desc) }
-	case "pages":
-		less = func(i, j int) bool { return cmpInt(filtered[i].Pages, filtered[j].Pages, q.Desc) }
-	case "days":
-		less = func(i, j int) bool { return cmpInt(filtered[i].Days, filtered[j].Days, q.Desc) }
-	}
-	sort.SliceStable(filtered, less)
-
-	total := len(filtered)
-	lo := q.Offset()
-	if lo > total {
-		lo = total
-	}
-	hi := lo + q.Limit()
-	if hi > total {
-		hi = total
-	}
-
-	rows := make([]webui.Row, 0, hi-lo)
-	for _, b := range filtered[lo:hi] {
-		title := webui.Text(displayTitle(b.Title))
-		// Only a book with quotes links into the reader — a link that opens an empty
-		// reader is worse than no link.
-		if b.Highlights > 0 {
-			title = template.HTML(fmt.Sprintf(`<a href="/quote?book=%s">%s</a>`,
-				url.QueryEscape(b.MD5), title))
-		}
-		quotes := webui.Text("—")
-		if b.Highlights > 0 {
-			quotes = webui.Text(fmt.Sprintf("%d", b.Highlights))
-		}
-		read := webui.Text("")
-		if readHref != nil {
-			if href := readHref(b); href != "" {
-				read = webui.IconTextButton("fa-solid fa-book-open-reader", ui.ReadLink, webui.BtnOpts{Kind: "secondary", Size: "sm", Href: href})
-			}
-		}
-		rows = append(rows, webui.Row{
-			"title":  title,
-			"read":   read,
-			"quotes": quotes,
-			"time":   webui.Text(humanDuration(b.Seconds)),
-			"pages":  webui.Text(fmt.Sprintf("%d", b.Pages)),
-			"days":   webui.Text(fmt.Sprintf("%d", b.Days)),
-		})
-	}
-	return rows, total
 }
 
 func cmpInt(a, b int, desc bool) bool {

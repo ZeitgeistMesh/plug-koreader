@@ -533,7 +533,7 @@ func TestTheTestButtonAnswersInlineUnderTheButtons(t *testing.T) {
 	if sourceTestBudget <= 0 || sourceTestBudget > 30*time.Second {
 		t.Errorf("the test is not bounded: %v", sourceTestBudget)
 	}
-	for name, v := range map[string]webui.ListView{"books": booksListView(), "catalog": catalogListView()} {
+	for name, v := range map[string]webui.ListView{"books": libraryListView()} {
 		if strings.TrimSpace(v.Title) != "" {
 			t.Errorf("the %s list has a title the nav already gives", name)
 		}

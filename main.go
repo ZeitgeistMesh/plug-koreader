@@ -183,7 +183,7 @@ func main() {
 			a.quoteView().Mount(mux, a.webGate, a.page)
 			// /books is the saved list of the person's book server; what they have read, by
 			// book, is /reading.
-			mux.HandleFunc(booksPath, a.serveCatalog)
+			mux.HandleFunc(booksPath, a.serveLibrary)
 			mux.HandleFunc(booksPath+"/file", a.serveBookFile)
 			mux.HandleFunc(booksPath+"/cover", a.serveBookCover)
 			mux.HandleFunc(booksPath+"/read", a.serveBookRead)
@@ -191,7 +191,7 @@ func main() {
 			mux.HandleFunc(booksPath+"/read/progress", a.serveReadProgress)
 			mux.HandleFunc(booksPath+"/read/highlight", a.serveReadHighlight)
 			mux.HandleFunc(settingsPath, a.serveSettings)
-			mux.HandleFunc(readingPath, a.serveBooks)
+			mux.HandleFunc(readingPath, serveReadingMoved)
 			mux.HandleFunc(readingPath+".json", a.serveBooksExport)
 			// Review moved to vision (design §1.4): the same session, starred memories only.
 			mux.HandleFunc("/review", a.serveReviewMoved)
@@ -252,7 +252,6 @@ func nav(active string) []flowweb.NavLink {
 		// NO "Reading" ENTRY: it pointed at "/" (the reading calendar), the page the brand
 		// already links to.
 		{Label: "Books", URL: booksPath, Icon: "fa-solid fa-book"},
-		{Label: "Read", URL: readingPath, Icon: "fa-solid fa-book-open-reader"},
 		{Label: "Quotes", URL: "/quotes", Icon: "fa-solid fa-quote-left"},
 		{Label: "Devices", URL: "/pair", Icon: "fa-solid fa-tablet-screen-button"},
 		{Label: "Plugin", URL: "/addon", Icon: "fa-solid fa-puzzle-piece"},

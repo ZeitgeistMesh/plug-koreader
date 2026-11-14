@@ -12,7 +12,6 @@ import (
 	"html"
 	"html/template"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -191,112 +190,12 @@ func (a *app) settingsBody(r *http.Request, tk dblib.TenantKey, note string, bad
 
 // ── /books ──────────────────────────────────────────────────────────────────
 
-func catalogListView() webui.ListView {
-	return webui.ListView{
-		Action:            booksPath,
-		RootID:            "lv-catalog",
-		SearchPlaceholder: ui.SearchPlaceholder,
-		EmptyText:         ui.EmptyNoneMatch,
-		PageSizes:         []int{25, 50, 100},
-		Columns: []webui.Column{
-			{Key: "cover", Label: ""},
-			{Key: "title", Label: ui.ColTitle, Sortable: true},
-			{Key: "authors", Label: ui.ColAuthor, Sortable: true, Priority: 1},
-			{Key: "formats", Label: ui.ColFormats, Priority: 2},
-		},
-	}
-}
-
-func catalogRows(entries []CatalogEntry, q webui.ListQuery) ([]webui.Row, int) {
-	hits := searchCatalog(entries, q.Search)
-	sorted := append([]CatalogEntry(nil), hits...)
-	less := func(i, j int) bool { return false }
-	switch q.Sort {
-	case "title":
-		less = func(i, j int) bool { return cmpText(sorted[i].Title, sorted[j].Title, q.Desc) }
-	case "authors":
-		less = func(i, j int) bool { return cmpText(sorted[i].Authors, sorted[j].Authors, q.Desc) }
-	}
-	sort.SliceStable(sorted, less)
-	total := len(sorted)
-	lo := min(q.Offset(), total)
-	hi := min(lo+q.Limit(), total)
-	rows := make([]webui.Row, 0, hi-lo)
-	for _, e := range sorted[lo:hi] {
-		key := entryKey(e.ID)
-		cover := webui.Text("")
-		if e.Cover != "" {
-			cover = template.HTML(fmt.Sprintf(`<img class="rd-cover" loading="lazy" alt="" src="%s/cover?id=%s">`, booksPath, key))
-		}
-		var fm []string
-		if _, ok := epubFile(&e); ok {
-			fm = append(fm, string(webui.IconTextButton("fa-solid fa-book-open-reader", ui.ReadLink,
-				webui.BtnOpts{Kind: "secondary", Size: "sm", Href: booksPath + "/read?id=" + key, Attrs: ` hx-boost="false" data-tip="` + html.EscapeString(ui.ReadTip) + `"`})))
-		}
-		// The Read button and each download are the same house button, in one row with the house gap
-		// (owner, plan 26856ccd: the EPUB link sat tight against Read, in another theme).
-		for i, f := range e.Files {
-			fm = append(fm, string(webui.IconTextButton("fa-solid fa-download", strings.ToUpper(fileExt(f.Type)),
-				webui.BtnOpts{Kind: "secondary", Size: "sm", Href: fmt.Sprintf("%s/file?id=%s&f=%d", booksPath, key, i), Attrs: ` hx-boost="false" data-tip="` + html.EscapeString(ui.DownloadTitle) + `"`})))
-		}
-		rows = append(rows, webui.Row{
-			"cover":   cover,
-			"title":   webui.Text(e.Title),
-			"authors": webui.Text(e.Authors),
-			"formats": template.HTML(`<div class="field-row">` + strings.Join(fm, "") + `</div>`),
-		})
-	}
-	return rows, total
-}
-
 func cmpText(a, b string, desc bool) bool {
 	a, b = strings.ToLower(a), strings.ToLower(b)
 	if desc {
 		return a > b
 	}
 	return a < b
-}
-
-func (a *app) serveCatalog(w http.ResponseWriter, r *http.Request) {
-	caller, ok := a.webGate(w, r)
-	if !ok {
-		return
-	}
-	tk := tenant(caller)
-	s, c := a.loadSource(r.Context(), tk), a.loadCatalog(r.Context(), tk)
-	// A stale or missing list starts a refresh behind the page. The page itself reads only
-	// what is saved.
-	if catalogDue(c, s, time.Now()) {
-		a.refreshSoon(tk)
-	}
-	view := catalogListView()
-	q := view.ParseListQuery(r)
-	var entries []CatalogEntry
-	if c != nil {
-		entries = c.Entries
-	}
-	rows, total := catalogRows(entries, q)
-	if flowweb.WantsFragment(r) && r.Method == http.MethodGet {
-		view.RenderFragment(w, q, rows, total)
-		return
-	}
-	p := a.page(booksPath)
-	p.CSS += readerBooksCSS
-	p.StartFor(w, r, ui.BooksTitle)
-	switch {
-	case s == nil:
-		fmt.Fprintf(w, `<p class="hint rd-status">%s <a href="%s">%s</a>.</p>`, html.EscapeString(ui.EmptyNotConnected), settingsPath, html.EscapeString(ui.NavSettings))
-	default:
-		fmt.Fprint(w, catalogStatus(c, a.isRefreshing(tk)))
-		if total == 0 && c == nil && a.isRefreshing(tk) {
-			fmt.Fprintf(w, `<p class="hint">%s</p>`, html.EscapeString(ui.EmptyLoading))
-		} else if total == 0 && c != nil && len(c.Entries) == 0 && c.Error == "" {
-			fmt.Fprintf(w, `<p class="hint">%s</p>`, html.EscapeString(ui.EmptyNoneAtAll))
-		} else {
-			view.Render(w, q, rows, total)
-		}
-	}
-	p.End(w)
 }
 
 func catalogStatus(c *Catalog, refreshing bool) string {
