@@ -14,7 +14,7 @@ func TestStatsPageHasTheYearBarAndTheNumbers(t *testing.T) {
 	idx, loc := yearFixture()
 	h := string(renderStats(idx, loc, 2026, time.Date(2026, 11, 14, 12, 0, 0, 0, loc)))
 	for _, want := range []string{`id="ko-stats"`, `hx-get="/stats?y=2026"`, `hx-select="#ko-stats"`, `/stats.png?y=2026&amp;dl=1`,
-		`download="reading-stats-2026.png"`, statsBooksRead, "March", "From 2 Mar to 4 Mar", "Dune", statsWeekdayHead, statsHourHead, statsMonthHead,
+		`download="reading-stats-2026.png"`, statsBooksRead, "March", "From 2 Mar to 4 Mar", "Dune", statsAvgDay, statsWeekdayHead, statsHourHead, statsMonthHead,
 		"You read most on Tuesdays.", "Your best hour is 9 pm."} {
 		if !strings.Contains(h, want) {
 			t.Errorf("stats page lacks %q", want)
@@ -57,5 +57,25 @@ func TestStatsPNGIsAPictureForAFullAndAnEmptyYear(t *testing.T) {
 		if err != nil || img.Bounds().Dx() != imgW*imgU {
 			t.Errorf("year %d: %v %v", y, err, img.Bounds())
 		}
+	}
+}
+
+// A tile says its words in full, on the page and in the picture: the picture's widest label and number fit the tile.
+func TestStatsTilesFitTheirWords(t *testing.T) {
+	tw := (imgW - 2*imgMargin - 3*12) / 4
+	for _, l := range []string{statsDaysRead, statsHours, statsBooksRead, statsPages, statsQuotes, statsBestStreak, statsBusiestMonth, statsAvgDay} {
+		if textW(l, 2) > tw-20 {
+			t.Errorf("%q does not fit a tile at the label size", l)
+		}
+	}
+	for _, v := range []string{"September", "Wednesday", "99999", "120 min"} {
+		if textW(v, 2) > tw-20 {
+			t.Errorf("%q does not fit a tile even at the smallest number size", v)
+		}
+	}
+	idx, loc := yearFixture()
+	h := string(renderStats(idx, loc, 2026, time.Date(2026, 11, 14, 12, 0, 0, 0, loc)))
+	if !strings.Contains(h, `title="Dune"`) || !strings.Contains(h, "Daily average") || !strings.Contains(h, "min") {
+		t.Errorf("the page lacks a title tooltip or the average's unit: %s", h)
 	}
 }

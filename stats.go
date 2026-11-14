@@ -37,8 +37,8 @@ const (
 	statsStreakNote       = "From %s to %s"
 	statsBusiestMonth     = "Busiest month"
 	statsBusiestMonthNote = "%d hours"
-	statsAvgDay           = "Average reading day"
-	statsAvgDayNote       = "%d minutes"
+	statsAvgDay           = "Daily average"
+	statsAvgDayValue      = "%d min"
 	statsMostReadHead     = "Books you read most"
 	statsWeekdayHead      = "By day of the week"
 	statsHourHead         = "By time of day"
@@ -202,7 +202,7 @@ func renderStats(idx *readingIndex, loc *time.Location, year int, now time.Time)
 		{Label: statsQuotes, Value: fmt.Sprint(d.Quotes)},
 		{Label: statsBestStreak, Value: fmt.Sprint(d.Streak), Hint: streak},
 		{Label: statsBusiestMonth, Value: busy, Hint: fmt.Sprintf(statsBusiestMonthNote, (d.Month[d.BusiestMonth-1]+1800)/3600)},
-		{Label: statsAvgDay, Value: fmt.Sprint(d.Seconds / d.Days / 60), Hint: fmt.Sprintf(statsAvgDayNote, d.Seconds/d.Days/60)},
+		{Label: statsAvgDay, Value: fmt.Sprintf(statsAvgDayValue, d.Seconds/d.Days/60)},
 	})))
 	wd, _ := argMax(d.Weekday[:])
 	hr, _ := argMax(d.Hour[:])
@@ -213,7 +213,7 @@ func renderStats(idx *readingIndex, loc *time.Location, year int, now time.Time)
 	} else {
 		b.WriteString(`<ol class="ko-top">`)
 		for _, t := range d.Top {
-			fmt.Fprintf(&b, `<li><span>%s</span><span class="muted">%s</span></li>`, template.HTMLEscapeString(displayTitle(t.Title)), humanDuration(t.Seconds))
+			fmt.Fprintf(&b, `<li><span title="%[1]s">%[1]s</span><span class="muted">%[2]s</span></li>`, template.HTMLEscapeString(displayTitle(t.Title)), humanDuration(t.Seconds))
 		}
 		b.WriteString(`</ol>`)
 	}
@@ -230,6 +230,7 @@ const statsCSS = `<style>
 .ko-sect h3{margin:0 0 var(--sp-2);font-size:1rem}
 .ko-top{margin:0;padding:0;list-style:none;display:grid;gap:var(--sp-1)}
 .ko-top li{display:flex;justify-content:space-between;gap:var(--sp-3)}
+.ko-top li span:first-child{min-width:0;overflow-wrap:anywhere}
 .ko-bars{display:grid;gap:2px}
 .ko-brow{display:grid;grid-template-columns:5.5rem minmax(0,1fr) 5rem;align-items:center;gap:var(--sp-2);font-size:.85rem}
 .ko-btrack{height:.6rem;background:var(--card);border:1px solid var(--border);border-radius:var(--r-chip,4px);overflow:hidden}
@@ -322,15 +323,20 @@ func statsPNG(idx *readingIndex, loc *time.Location, year int) ([]byte, error) {
 			{fmt.Sprint(d.Days), statsDaysRead}, {fmt.Sprintf("%.0f", float64(d.Seconds)/3600), statsHours},
 			{fmt.Sprint(d.Books), statsBooksRead}, {fmt.Sprint(d.Pages), statsPages},
 			{fmt.Sprint(d.Quotes), statsQuotes}, {fmt.Sprint(d.Streak), statsBestStreak},
-			{busy, statsBusiestMonth}, {fmt.Sprint(d.Seconds / d.Days / 60), statsAvgDay},
+			{busy, statsBusiestMonth}, {fmt.Sprintf(statsAvgDayValue, d.Seconds/d.Days/60), statsAvgDay},
 		}
 		tw := (imgW - 2*imgMargin - 3*12) / 4
 		for i, t := range tiles {
 			x, y := imgMargin+(i%4)*(tw+12), 36+35+14+(i/4)*(62+12)
 			c.rect(x, y, tw, 62, imgCard)
 			c.stroke(x, y, tw, 62, imgBorder)
-			c.text(x+10, y+8, 4, fit(t[0], (tw-20)/24), imgText)
-			c.text(x+10, y+42, 2, fit(t[1], (tw-20)/12), imgMuted)
+			// A tile shows its words whole: the number steps down a size before it would be cut.
+			vs := 4
+			for vs > 2 && textW(t[0], vs) > tw-20 {
+				vs--
+			}
+			c.text(x+10, y+8, vs, t[0], imgText)
+			c.text(x+10, y+42, 2, t[1], imgMuted)
 		}
 		y := 36 + 35 + 14 + 2*(62+12) + 26
 		c.text(imgMargin, y, 2, statsMostReadHead, imgMuted)
