@@ -34,7 +34,10 @@ const readerBooksCSS = `
 .rd-cover{display:block;height:calc(var(--sp-6) + var(--sp-4));width:auto}
 .rd-status{margin-block:var(--sp-3)}
 .rd-acts .btn-group{max-width:none;margin-left:auto}
-.rd-acts .btn{white-space:nowrap}
+.rd-acts{--rd-act-w:5.75rem}
+/* Every row button is one width, so the PDF, Read, EPUB and BIN buttons of different rows line up
+   edge to edge instead of being 3 to 13 px apart by the length of their label (owner, plan 26856ccd). */
+.rd-acts .btn{white-space:nowrap;min-width:var(--rd-act-w)}
 .rd-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden}
 @media (min-width: 641px){#lv-books td[data-k=formats]{width:1%;white-space:nowrap;text-align:right}}
 .rd-form{display:flex;flex-direction:column;gap:var(--sp-3)}

@@ -151,3 +151,14 @@ func TestReadingTitlesAreUnescapedEverywhere(t *testing.T) {
 		}
 	}
 }
+
+// ROW BUTTONS ARE ONE WIDTH. Read, PDF, EPUB and BIN differed by the length of their label
+// (76.5, 86.7 and 89.7 px on the owner's list), so the buttons of different rows did not line
+// up and a few pixels of ragged edge showed (owner, plan 26856ccd). Every button in a row's
+// actions takes the same minimum width, wide enough for the longest label.
+func TestEveryRowButtonIsTheSameWidth(t *testing.T) {
+	if !strings.Contains(readerBooksCSS, ".rd-acts .btn{white-space:nowrap;min-width:var(--rd-act-w)}") ||
+		!strings.Contains(readerBooksCSS, ".rd-acts{--rd-act-w:5.75rem}") {
+		t.Error("the row buttons are not given one width")
+	}
+}
