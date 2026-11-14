@@ -232,7 +232,7 @@ const statsCSS = `<style>
 .ko-top li{display:flex;justify-content:space-between;gap:var(--sp-3)}
 .ko-bars{display:grid;gap:2px}
 .ko-brow{display:grid;grid-template-columns:5.5rem minmax(0,1fr) 5rem;align-items:center;gap:var(--sp-2);font-size:.85rem}
-.ko-btrack{height:.6rem;background:var(--card);border:1px solid var(--border);overflow:hidden}
+.ko-btrack{height:.6rem;background:var(--card);border:1px solid var(--border);border-radius:var(--r-chip,4px);overflow:hidden}
 .ko-btrack i{display:block;height:100%;background:var(--accent)}
 .ko-bval{text-align:right}
 </style>`
