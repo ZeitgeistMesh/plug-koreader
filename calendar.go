@@ -226,6 +226,7 @@ func renderMonthCal(c monthCal) template.HTML {
 	nav("fa-solid fa-angle-right", calNextMonth, c.Next)
 	nav("fa-solid fa-angles-right", calNextYear, c.NextY)
 	b.WriteString(string(webui.IconTextButton("fa-solid fa-table-cells", calYearView, webui.BtnOpts{Size: "sm", Href: "/year?y=" + c.Month[:4]})))
+	b.WriteString(string(webui.IconTextButton("fa-solid fa-chart-column", statsTitle, webui.BtnOpts{Size: "sm", Href: "/stats?y=" + c.Month[:4]})))
 	b.WriteString(`</div>`)
 	if c.Books == 0 {
 		fmt.Fprintf(&b, `<p class="muted">%s</p>`, calEmptyMonth)

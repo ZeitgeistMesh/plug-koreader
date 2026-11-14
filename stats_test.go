@@ -1,0 +1,61 @@
+package main
+
+import (
+	"bytes"
+	"image/png"
+	"strings"
+	"testing"
+	"time"
+)
+
+// The Stats page has the year page's selector and picture button, the year's numbers, and bars by weekday,
+// hour and month.
+func TestStatsPageHasTheYearBarAndTheNumbers(t *testing.T) {
+	idx, loc := yearFixture()
+	h := string(renderStats(idx, loc, 2026, time.Date(2026, 11, 14, 12, 0, 0, 0, loc)))
+	for _, want := range []string{`id="ko-stats"`, `hx-get="/stats?y=2026"`, `hx-select="#ko-stats"`, `/stats.png?y=2026&amp;dl=1`,
+		`download="reading-stats-2026.png"`, statsBooksRead, "March", "From 2 Mar to 4 Mar", "Dune", statsWeekdayHead, statsHourHead, statsMonthHead,
+		"You read most on Tuesdays.", "Your best hour is 9 pm."} {
+		if !strings.Contains(h, want) {
+			t.Errorf("stats page lacks %q", want)
+		}
+	}
+	if strings.Contains(h, "£") {
+		t.Error("a reading page shows no money")
+	}
+}
+
+func TestStatsDetailCountsByWeekdayHourAndMonth(t *testing.T) {
+	idx, loc := yearFixture()
+	d := buildYearDetail(idx, loc, 2026)
+	// 2 Mar is a Monday: 1800s; Tue 3 Mar 3600s; Wed 4 Mar 600s; Thu 12 Nov 900s.
+	if d.Weekday[0] != 1800 || d.Weekday[1] != 3600 || d.Weekday[2] != 600 || d.Weekday[3] != 900 {
+		t.Errorf("weekday = %v", d.Weekday)
+	}
+	if d.Hour[9] != 1800 || d.Hour[21] != 3600 || d.Hour[7] != 600 || d.Hour[20] != 900 {
+		t.Errorf("hour = %v", d.Hour)
+	}
+	if d.BusiestMonth != 3 || d.Month[2] != 6000 || d.Month[10] != 900 {
+		t.Errorf("month = %v busiest %d", d.Month, d.BusiestMonth)
+	}
+	if d.StreakFrom != "2 Mar" || d.StreakTo != "4 Mar" {
+		t.Errorf("streak %s to %s", d.StreakFrom, d.StreakTo)
+	}
+	if e := string(renderStats(idx, loc, 2025, time.Date(2026, 11, 14, 12, 0, 0, 0, loc))); !strings.Contains(e, "Nothing read in 2025.") || strings.Contains(e, statsHourHead) {
+		t.Errorf("an empty year: %s", e)
+	}
+}
+
+func TestStatsPNGIsAPictureForAFullAndAnEmptyYear(t *testing.T) {
+	idx, loc := yearFixture()
+	for _, y := range []int{2026, 2025} {
+		b, err := statsPNG(idx, loc, y)
+		if err != nil {
+			t.Fatal(err)
+		}
+		img, err := png.Decode(bytes.NewReader(b))
+		if err != nil || img.Bounds().Dx() != imgW*imgU {
+			t.Errorf("year %d: %v %v", y, err, img.Bounds())
+		}
+	}
+}

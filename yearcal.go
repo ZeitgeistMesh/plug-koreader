@@ -105,7 +105,10 @@ func parseYear(s string, idx *readingIndex, loc *time.Location, now time.Time) i
 	return now.In(loc).Year()
 }
 
-func yearSwitch(years []int, active int) template.HTML {
+func yearSwitch(years []int, active int) template.HTML { return yearSwitchAt("/year", "ko-year", years, active) }
+
+// yearSwitchAt is the year links for the page at path, swapping the block with the given id.
+func yearSwitchAt(path, id string, years []int, active int) template.HTML {
 	var b strings.Builder
 	b.WriteString(`<div class="field-row" role="group" aria-label="Year">`)
 	for _, y := range years {
@@ -113,9 +116,9 @@ func yearSwitch(years []int, active int) template.HTML {
 		if y == active {
 			kind = "primary"
 		}
-		href := "/year?y=" + strconv.Itoa(y)
+		href := path + "?y=" + strconv.Itoa(y)
 		b.WriteString(string(webui.IconTextButton("", strconv.Itoa(y), webui.BtnOpts{Kind: kind, Size: "sm", Href: href,
-			Attrs: ` hx-get="` + href + `" hx-target="#ko-year" hx-swap="outerHTML" hx-select="#ko-year" hx-push-url="true"`})))
+			Attrs: ` hx-get="` + href + `" hx-target="#` + id + `" hx-swap="outerHTML" hx-select="#` + id + `" hx-push-url="true"`})))
 	}
 	b.WriteString(`</div>`)
 	return template.HTML(b.String())
