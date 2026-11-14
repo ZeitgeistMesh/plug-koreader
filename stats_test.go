@@ -79,3 +79,21 @@ func TestStatsTilesFitTheirWords(t *testing.T) {
 		t.Errorf("the page lacks a title tooltip or the average's unit: %s", h)
 	}
 }
+
+// The Year and Stats pages share one bar (owner, cc3e26a6): the two views to switch between, the years, and
+// Save as image; the calendar's bar has Year only.
+func TestYearAndStatsShareOneBar(t *testing.T) {
+	idx, loc := yearFixture()
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, loc)
+	for _, h := range []string{string(renderYear(idx, loc, 2026, now)), string(renderStats(idx, loc, 2026, now))} {
+		for _, want := range []string{`href="/year?y=2026"`, `href="/stats?y=2026"`, "Save as image", `hx-get="/`} {
+			if !strings.Contains(h, want) {
+				t.Errorf("a bar lacks %s", want)
+			}
+		}
+	}
+	c := string(renderMonthCal(buildMonthCal(idx, loc, time.Date(2026, 3, 1, 0, 0, 0, 0, loc), now)))
+	if !strings.Contains(c, `href="/year?y=2026"`) || strings.Contains(c, "/stats") {
+		t.Error("the calendar bar keeps Year and has no Stats")
+	}
+}

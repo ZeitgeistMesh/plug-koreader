@@ -15,7 +15,6 @@ import (
 	"image/png"
 	"net/http"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -25,7 +24,6 @@ import (
 // Copy, written by Opus.
 const (
 	statsTitle            = "Stats"
-	statsSave             = "Save as image"
 	statsSaveTip          = "Save this year's stats as a picture"
 	statsEmpty            = "Nothing read in %d."
 	statsDaysRead         = "Days read"
@@ -179,12 +177,8 @@ func hourLabels() []string {
 func renderStats(idx *readingIndex, loc *time.Location, year int, now time.Time) template.HTML {
 	d := buildYearDetail(idx, loc, year)
 	var b strings.Builder
-	b.WriteString(`<div id="ko-stats"><div class="ko-yearbar">`)
-	b.WriteString(string(yearSwitchAt("/stats", "ko-stats", yearYears(idx, year, now, loc), year)))
-	b.WriteString(string(webui.IconTextButton("fa-solid fa-image", statsSave, webui.BtnOpts{Kind: "secondary", Size: "sm",
-		Href:  fmt.Sprintf("/stats.png?y=%d&dl=1", year),
-		Attrs: ` hx-boost="false" download="reading-stats-` + strconv.Itoa(year) + `.png" data-tip="` + template.HTMLEscapeString(statsSaveTip) + `"`})))
-	b.WriteString(`</div>`)
+	b.WriteString(`<div id="ko-stats">`)
+	b.WriteString(string(yearBar("/stats", idx, loc, year, now)))
 	if d.Days == 0 {
 		fmt.Fprintf(&b, `<p class="muted">%s</p></div>`, fmt.Sprintf(statsEmpty, year))
 		return template.HTML(b.String())

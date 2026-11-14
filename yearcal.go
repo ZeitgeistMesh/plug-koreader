@@ -138,15 +138,36 @@ func yearYears(idx *readingIndex, active int, now time.Time, loc *time.Location)
 	return out
 }
 
+// yearBar is the bar over the Year and Stats pages, the same on both: the two views to switch between,
+// the years, and Save as image for the view shown (owner, plan dab02a73). view is "/year" or "/stats".
+func yearBar(view string, idx *readingIndex, loc *time.Location, year int, now time.Time) template.HTML {
+	id, png, name, tip := "ko-year", "/year.png", "reading-", yearSaveTip
+	if view == "/stats" {
+		id, png, name, tip = "ko-stats", "/stats.png", "reading-stats-", statsSaveTip
+	}
+	var b strings.Builder
+	b.WriteString(`<div class="ko-yearbar"><div class="field-row" role="group" aria-label="View">`)
+	for _, v := range [][2]string{{"/year", yearTitle}, {"/stats", statsTitle}} {
+		kind := "secondary"
+		if v[0] == view {
+			kind = "primary"
+		}
+		b.WriteString(string(webui.IconTextButton("", v[1], webui.BtnOpts{Kind: kind, Size: "sm", Href: v[0] + "?y=" + strconv.Itoa(year)})))
+	}
+	b.WriteString(`</div>`)
+	b.WriteString(string(yearSwitchAt(view, id, yearYears(idx, year, now, loc), year)))
+	b.WriteString(string(webui.IconTextButton("fa-solid fa-image", yearSave, webui.BtnOpts{Kind: "secondary", Size: "sm",
+		Href:  fmt.Sprintf("%s?y=%d&dl=1", png, year),
+		Attrs: ` hx-boost="false" download="` + name + strconv.Itoa(year) + `.png" data-tip="` + template.HTMLEscapeString(tip) + `"`})))
+	b.WriteString(`</div>`)
+	return template.HTML(b.String())
+}
+
 func renderYear(idx *readingIndex, loc *time.Location, year int, now time.Time) template.HTML {
 	st := buildYearStats(idx, loc, year)
 	var b strings.Builder
-	b.WriteString(`<div id="ko-year"><div class="ko-yearbar">`)
-	b.WriteString(string(yearSwitch(yearYears(idx, year, now, loc), year)))
-	b.WriteString(string(webui.IconTextButton("fa-solid fa-image", yearSave, webui.BtnOpts{Kind: "secondary", Size: "sm",
-		Href:  fmt.Sprintf("/year.png?y=%d&dl=1", year),
-		Attrs: ` hx-boost="false" download="reading-` + strconv.Itoa(year) + `.png" data-tip="` + template.HTMLEscapeString(yearSaveTip) + `"`})))
-	b.WriteString(`</div>`)
+	b.WriteString(`<div id="ko-year">`)
+	b.WriteString(string(yearBar("/year", idx, loc, year, now)))
 	if st.Days == 0 {
 		fmt.Fprintf(&b, `<p class="muted">%s</p>`, fmt.Sprintf(yearEmpty, year))
 	} else {
