@@ -143,7 +143,7 @@ func (a *app) serveBookRead(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	b, md5, fidx, err := a.openBook(ctx, tk, s, e)
 	p := a.page(booksPath)
-	p.CSS += readerBooksCSS + readerReadCSS
+	p.CSS += readerBooksCSS + readerReadCSS + readerFullCSS
 	if err != nil {
 		p.StartFor(w, r, e.Title)
 		fmt.Fprintf(w, `<p class="hint rd-status" role="alert">%s</p>`, html.EscapeString(fill(ui.ErrOpen, "why", err.Error())))
@@ -213,10 +213,14 @@ func (a *app) serveBookRead(w http.ResponseWriter, r *http.Request) {
 		if i < n {
 			icon = "fa-solid fa-chevron-left"
 		}
-		return string(webui.IconTextButton(icon, label, webui.BtnOpts{Kind: "secondary", Href: readURL(i, ""), Attrs: swapAttrs(readURL(i, ""))}))
+		which := "next"
+		if i < n {
+			which = "prev"
+		}
+		return string(webui.IconTextButton(icon, label, webui.BtnOpts{Kind: "secondary", Href: readURL(i, ""), Attrs: swapAttrs(readURL(i, "")) + ` data-rd="` + which + `"`}))
 	}
-	fmt.Fprintf(w, `<div class="rd-bar">%s<span class="hint rd-pos" id="rd-pos" role="status">%s</span><span class="hint" id="rd-status" role="status"></span>%s</div>`,
-		nav(n-1, ui.Prev), html.EscapeString(fill(ui.PercentRead, "percent", fmt.Sprintf("%.0f", p0))), nav(n+1, ui.Next))
+	fmt.Fprintf(w, `<div class="rd-bar">%s<span class="hint rd-pos" id="rd-pos" role="status">%s</span><span class="hint" id="rd-status" role="status"></span>%s%s</div>`,
+		nav(n-1, ui.Prev), html.EscapeString(fill(ui.PercentRead, "percent", fmt.Sprintf("%.0f", p0))), fullButton(), nav(n+1, ui.Next))
 	fmt.Fprint(w, toc.String())
 	attrs := map[string]string{
 		"book": md5, "chapter": fmt.Sprint(n), "title": e.Title, "authors": e.Authors, "chaptertitle": chTitle,
@@ -231,7 +235,7 @@ func (a *app) serveBookRead(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `<article class="rd-text" id="rd-text"%s><h2>%s</h2>%s</article>`, da.String(), html.EscapeString(chTitle), body)
 	fmt.Fprintf(w, `<div class="rd-quote" id="rd-quote">%s</div>`,
 		webui.IconTextButton("fa-solid fa-quote-left", ui.SaveQuote, webui.BtnOpts{Kind: "primary", Type: "button"}))
-	fmt.Fprint(w, readerReadJS, `</div>`)
+	fmt.Fprint(w, fullStrip(), readerReadJS, `</div>`, readerFullJS)
 	p.End(w)
 }
 

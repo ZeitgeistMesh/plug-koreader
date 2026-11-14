@@ -142,7 +142,7 @@ func (a *app) servePDFRead(w http.ResponseWriter, r *http.Request, tk dblib.Tena
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
 	p := a.page(booksPath)
-	p.CSS += readerBooksCSS + readerReadCSS + readerPDFCSS
+	p.CSS += readerBooksCSS + readerReadCSS + readerPDFCSS + readerFullCSS
 	path, err := a.fetchToCache(ctx, tk, s, key+"-"+fmt.Sprint(fidx)+".pdf", e.Files[fidx].Href)
 	var md5 string
 	if err == nil {
@@ -186,15 +186,15 @@ func (a *app) servePDFRead(w http.ResponseWriter, r *http.Request, tk dblib.Tena
 	}
 	p.StartFor(w, r, e.Title)
 	fmt.Fprint(w, `<div class="rd-shell" id="rd-shell">`)
-	fmt.Fprintf(w, `<div class="rd-bar">%s<span class="hint rd-pos" id="rd-pos" role="status">%s</span><span class="hint" id="rd-status" role="status"></span>%s</div>`,
+	fmt.Fprintf(w, `<div class="rd-bar">%s<span class="hint rd-pos" id="rd-pos" role="status">%s</span><span class="hint" id="rd-status" role="status"></span>%s%s</div>`,
 		btn("rd-prev", "fa-solid fa-chevron-left", ui.Prev), html.EscapeString(fill(ui.PercentRead, "percent", fmt.Sprintf("%.0f", percent))),
-		btn("rd-next", "fa-solid fa-chevron-right", ui.Next))
+		fullButton(), btn("rd-next", "fa-solid fa-chevron-right", ui.Next))
 	fmt.Fprintf(w, `<details class="rd-toc" id="rd-toc" hidden><summary>%s</summary><ol></ol></details>`, html.EscapeString(ui.ContentsHeading))
 	fmt.Fprintf(w, `<article class="rd-text rd-pdf" id="rd-text"%s><p class="hint" id="rd-pdfmsg" role="alert" hidden>%s <a href="%s" hx-boost="false">%s</a></p><div class="rd-pdfpage" id="rd-pdfpage"><p class="hint">%s</p></div></article>`,
 		da.String(), html.EscapeString(ui.PdfCantDraw), html.EscapeString(fileURL), html.EscapeString(strings.ToUpper(fileExt("application/pdf"))), html.EscapeString(ui.PdfLoading))
 	fmt.Fprintf(w, `<div class="rd-quote" id="rd-quote">%s</div>`,
 		webui.IconTextButton("fa-solid fa-quote-left", ui.SaveQuote, webui.BtnOpts{Kind: "primary", Type: "button"}))
 	fmt.Fprintf(w, `<script src="%s" onerror="var m=document.getElementById('rd-pdfmsg');if(m)m.hidden=false"></script>`, pdfJSURL)
-	fmt.Fprint(w, readerPDFJS, `</div>`)
+	fmt.Fprint(w, fullStrip(), readerPDFJS, `</div>`, readerFullJS)
 	p.End(w)
 }
