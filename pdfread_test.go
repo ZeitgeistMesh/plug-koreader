@@ -93,8 +93,16 @@ func TestAPDFPageTurnSavesTheNewPageAndSurvivesUnload(t *testing.T) {
 	if strings.Contains(goFn, "send()") {
 		t.Errorf("go() saves before it has moved, so Next posts the page it is leaving: %s", goFn)
 	}
-	if !strings.Contains(js, "show(now());send();});") {
+	if !strings.Contains(js, "else send();});") {
 		t.Error("the page just drawn is not saved once it is on screen")
+	}
+	// Opening is not a move: the first draw only records where the person already was, so a place a
+	// device set as a percentage is not written back as a slightly different one on every open.
+	if !strings.Contains(js, "if(!opened){opened=true;lastKey=cur+':'+now().toFixed(3);}else send();") {
+		t.Error("the first draw saves the position it just loaded")
+	}
+	if strings.Count(js, "send();") < 3 { // the draw, pagehide and visibilitychange still save a real move
+		t.Error("a real move no longer saves")
 	}
 	if !strings.Contains(js, "keepalive:!!keep") || !strings.Contains(js, "title:d.title},true)") {
 		t.Error("the progress save does not use keepalive, so the browser cancels it on unload")
