@@ -125,3 +125,29 @@ func TestLibraryRowsStayEvenHeight(t *testing.T) {
 		}
 	}
 }
+
+// The same fixed-point unescape runs on what the DEVICE sent: a reading-session title with no catalog
+// match, the calendar's bars, the day page and the quote export all print it once-escaped.
+func TestReadingTitlesAreUnescapedEverywhere(t *testing.T) {
+	const raw = "&amp;#40;Kate Daniels 1&amp;#41; Andrews, Ilona - Magic Bites"
+	idx := buildReadingIndex([]ReadEvent{
+		{ID: "r1", Kind: KindRead, BookMD5: "k", Title: raw, Authors: "Andrews &amp;amp; Ilona", StartTime: 1789000000, Duration: 600, Page: 1},
+		{ID: "h1", Kind: KindHighlight, BookMD5: "k", Title: raw, StartTime: 1789000100, Text: "a line"},
+	}, time.UTC)
+	rows, _ := libraryRows(buildLibrary(nil, shelf(idx)), webui.ListQuery{Page: 1, PageSize: 25}, true)
+	got := string(rows[0]["title"])
+	if strings.Contains(got, "#40") || strings.Contains(got, "&amp;") || !strings.Contains(got, ">(Kate Daniels 1) Andrews, Ilona - Magic Bites<") {
+		t.Errorf("shelf title = %s", got)
+	}
+	if a := string(rows[0]["authors"]); a != "Andrews &amp; Ilona" {
+		t.Errorf("authors = %q", a)
+	}
+	if d := displayTitle(raw); strings.Contains(d, "#40") {
+		t.Errorf("displayTitle = %q", d)
+	}
+	for _, an := range idx.Annotations {
+		if strings.Contains(an.Title, "#40") {
+			t.Errorf("annotation title = %q", an.Title)
+		}
+	}
+}

@@ -456,7 +456,7 @@ func visionReviewURL() string {
 // the tool never knew it — "Unknown - The Slight Edge". Shown in a narrow column that is
 // just "Unknown". Only a placeholder is dropped: plenty of real titles contain " - ".
 func displayTitle(s string) string {
-	s = strings.TrimSpace(s)
+	s = strings.TrimSpace(unescapeOnce(s))
 	if before, after, ok := strings.Cut(s, " - "); ok && strings.TrimSpace(after) != "" {
 		switch strings.ToLower(strings.TrimSpace(before)) {
 		case "unknown", "unknown author", "n/a", "anonymous":

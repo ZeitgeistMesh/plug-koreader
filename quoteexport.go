@@ -96,7 +96,7 @@ func quoteExport(annotations []ReadEvent, after string, limit int) (items []expo
 		}
 		it := exportItem{
 			Ref: sourceKoreader + ":" + ev.ID, ID: ev.ID, Kind: ev.Kind, BookMD5: ev.BookMD5,
-			Title: ev.Title, Authors: ev.Authors, Chapter: ev.Chapter, Page: ev.Page,
+			Title: unescapeOnce(ev.Title), Authors: unescapeOnce(ev.Authors), Chapter: ev.Chapter, Page: ev.Page,
 			Text: ev.Text, Note: ev.Note, ReceivedAt: ev.ReceivedAt, cursor: exportCursor(ev),
 		}
 		if ev.StartTime > 0 {

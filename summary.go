@@ -203,6 +203,9 @@ func buildReadingIndex(events []ReadEvent, loc *time.Location) *readingIndex {
 		if ev.StartTime <= 0 {
 			continue
 		}
+		// A title or author a feed or device escaped twice would print as "&#40;" (owner via master, plan
+		// 26856ccd). Plain text here, so every page that draws it escapes it once.
+		ev.Title, ev.Authors = unescapeOnce(ev.Title), unescapeOnce(ev.Authors)
 		t := time.Unix(ev.StartTime, 0).In(loc)
 		date := readingDate(ev.StartTime, loc)
 		day := idx.Days[date]
