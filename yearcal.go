@@ -195,6 +195,8 @@ func renderYear(idx *readingIndex, loc *time.Location, year int, now time.Time) 
 // a month on this page is the month page and nothing here resizes it. Only the month's heading is new.
 const yearCSS = `<style>
 .ko-yearbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--sp-2);margin:0 0 var(--sp-3)}
+/* Two rows on both pages, so the bar is the same on each: the views and Save as image, then the years. */
+.ko-yearbar>[aria-label=Year]{order:3;flex:1 1 100%}
 .ko-ygrid{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--sp-4);margin-top:var(--sp-2)}
 .ko-ymonth{min-width:0}
 .ko-ymonth h3{margin:0 0 var(--sp-1);font-size:1rem}
