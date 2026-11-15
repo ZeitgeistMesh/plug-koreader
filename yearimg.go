@@ -4,9 +4,9 @@ package main
 // (a box per day, a bar per book, a histogram of the hours) with the year's reading numbers above and
 // the most-read books below.
 //
-// Drawn in Go with the standard library only: an indexed-colour image, rectangles and a small
-// built-in bitmap font, so it needs no font file, no browser and no outside tool, and a year is
-// a few milliseconds of work. Colours are the house dark palette, fixed, so a saved picture looks
+// Drawn in Go with the standard library only: an RGBA image, rectangles and an embedded typeface
+// (exportfont.go), so it needs no browser and no outside tool, and a year is a few tens of
+// milliseconds of work. Colours are the house dark palette, fixed, so a saved picture looks
 // the same wherever it is opened.
 
 import (
@@ -15,6 +15,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"strings"
 	"time"
 )
@@ -27,6 +28,7 @@ const (
 	imgCellW   = (imgW - 2*imgMargin - 6*imgCellGap) / 7 // one month per row, the full width: a box as wide as the month page's
 	imgLane    = 10                                      // a book's bar and the room it takes
 	imgNumH    = 13                                      // the day number's line
+	imgRow     = 22 // a most-read row
 	imgTickH   = 12                                      // the foot: the hours histogram
 	imgCellH   = imgNumH + maxLanes*imgLane + imgTickH + 2
 )
@@ -49,37 +51,41 @@ func blend(a, b color.RGBA, pct int) color.RGBA {
 	return color.RGBA{m(a.R, b.R), m(a.G, b.G), m(a.B, b.B), 255}
 }
 
-// canvas is an indexed image with a palette that grows as colours are first used.
+// canvas is an RGBA image the pictures are drawn on.
 type canvas struct {
-	img *image.Paletted
-	pal color.Palette
-	idx map[color.RGBA]uint8
+	img *image.RGBA
 }
 
 func newCanvas(wu, hu int) *canvas {
-	return &canvas{img: image.NewPaletted(image.Rect(0, 0, wu*imgU, hu*imgU), nil), idx: map[color.RGBA]uint8{}}
+	return &canvas{img: image.NewRGBA(image.Rect(0, 0, wu*imgU, hu*imgU))}
 }
 
-func (c *canvas) ci(col color.RGBA) uint8 {
-	if i, ok := c.idx[col]; ok {
-		return i
-	}
-	i := uint8(len(c.pal))
-	c.pal = append(c.pal, col)
-	c.idx[col] = i
-	return i
-}
-
-// px fills a rectangle in device pixels.
+// px fills a rectangle in device pixels: one row is written, the rest are copies of it.
 func (c *canvas) px(x, y, w, h int, col color.RGBA) {
-	i := c.ci(col)
 	b := c.img.Bounds()
-	for yy := max(y, 0); yy < min(y+h, b.Dy()); yy++ {
-		row := c.img.Pix[yy*c.img.Stride:]
-		for xx := max(x, 0); xx < min(x+w, b.Dx()); xx++ {
-			row[xx] = i
-		}
+	x0, x1 := max(x, 0), min(x+w, b.Dx())
+	y0, y1 := max(y, 0), min(y+h, b.Dy())
+	if x0 >= x1 || y0 >= y1 {
+		return
 	}
+	first := c.img.Pix[y0*c.img.Stride+x0*4 : y0*c.img.Stride+x1*4]
+	for o := 0; o < len(first); o += 4 {
+		first[o], first[o+1], first[o+2], first[o+3] = col.R, col.G, col.B, 255
+	}
+	for yy := y0 + 1; yy < y1; yy++ {
+		copy(c.img.Pix[yy*c.img.Stride+x0*4:yy*c.img.Stride+x1*4], first)
+	}
+}
+
+// over blends col onto one pixel at coverage a (0..1).
+func (c *canvas) over(x, y int, col color.RGBA, a float32) {
+	if !(image.Point{x, y}).In(c.img.Bounds()) {
+		return
+	}
+	o := y*c.img.Stride + x*4
+	p := c.img.Pix[o : o+4]
+	m := func(d, s uint8) uint8 { return uint8(float32(d) + (float32(s)-float32(d))*a + 0.5) }
+	p[0], p[1], p[2], p[3] = m(p[0], col.R), m(p[1], col.G), m(p[2], col.B), 255
 }
 
 // rect fills a rectangle in layout units.
@@ -92,33 +98,54 @@ func (c *canvas) stroke(x, y, w, h int, col color.RGBA) {
 	c.rect(x+w-1, y, 1, h, col)
 }
 
-// text draws s (upper-cased) with the built-in font; scale is layout units per font pixel.
+// The type: scale is the size step the pictures were laid out in. A step is ten layout units of em
+// (capitals seven tall), and the big steps are bold.
+const (
+	emPerScale = 10
+	capPerEm   = 0.7 // Liberation Sans' capitals are 0.69 of the em
+)
+
+func scaleBold(scale int) bool { return scale >= 4 }
+
+// text draws s with its capitals' top at y (layout units), in the typeface of the exports.
 func (c *canvas) text(x, y, scale int, s string, col color.RGBA) {
-	for _, r := range strings.ToUpper(s) {
-		g, ok := glyphs[r]
-		if !ok {
-			g = glyphs['?']
-		}
-		for row, line := range strings.Split(g, "|") {
-			for cx, ch := range line {
-				if ch == '#' {
-					c.rect(x+cx*scale, y+row*scale, scale, scale, col)
-				}
-			}
-		}
-		x += 6 * scale
+	f := exportFace(scaleBold(scale))
+	if f == nil {
+		return
 	}
+	em := float64(emPerScale * scale * imgU)
+	f.drawText(c, float64(x*imgU), float64(y*imgU)+em*capPerEm, em, s, col)
 }
 
-func textW(s string, scale int) int { return len([]rune(s)) * 6 * scale }
+// textW is the width of s in layout units, rounded up.
+func textW(s string, scale int) int {
+	f := exportFace(scaleBold(scale))
+	if f == nil {
+		return len([]rune(s)) * 6 * scale
+	}
+	return int(math.Ceil(f.textAdvance(s, float64(emPerScale*scale*imgU)) / imgU))
+}
 
-// fit shortens s to at most n characters, with a dot-dot-dot when it had to.
-func fit(s string, n int) string {
-	r := []rune(s)
-	if len(r) <= n {
+// fit shortens s to the widest start of it that fits in maxW layout units at scale, with a
+// dot-dot-dot when it had to.
+func fit(s string, scale, maxW int) string {
+	if textW(s, scale) <= maxW {
 		return s
 	}
-	return string(r[:max(n-3, 1)]) + "..."
+	r := []rune(s)
+	for n := len(r) - 1; n > 1; n-- {
+		if t := strings.TrimRight(string(r[:n]), " ") + "..."; textW(t, scale) <= maxW {
+			return t
+		}
+	}
+	return "..."
+}
+
+// bookLine is a most-read row: its number and the title, cut to what is left of the row once the
+// time at its right edge has its room.
+func bookLine(n int, title, t string) string {
+	prefix := fmt.Sprintf("%d. ", n)
+	return prefix + fit(displayTitle(title), 2, imgW-2*imgMargin-textW(t, 2)-textW(prefix, 2)-16)
 }
 
 // yearPNG draws the year. now fixes "today" so a test is stable.
@@ -134,7 +161,7 @@ func yearPNG(idx *readingIndex, loc *time.Location, year int, now time.Time) ([]
 		cals[m-1] = buildMonthCal(idx, loc, time.Date(year, time.Month(m), 1, 0, 0, 0, 0, loc), now)
 		months += monthHead + len(cals[m-1].Weeks)*(imgCellH+imgCellGap) + monthGap
 	}
-	foot := 14 + 8 + len(st.Top)*18 + 40
+	foot := 14 + 8 + len(st.Top)*imgRow + 40
 	if len(st.Top) == 0 {
 		foot = 40
 	}
@@ -146,9 +173,9 @@ func yearPNG(idx *readingIndex, loc *time.Location, year int, now time.Time) ([]
 
 	// The numbers.
 	tiles := [][2]string{
-		{fmt.Sprint(st.Days), "DAYS READ"}, {fmt.Sprintf("%.0f", float64(st.Seconds)/3600), "HOURS"},
-		{fmt.Sprint(st.Books), "BOOKS"}, {fmt.Sprint(st.Pages), "PAGES"},
-		{fmt.Sprint(st.Quotes), "QUOTES"}, {fmt.Sprint(st.Streak), "STREAK"},
+		{fmt.Sprint(st.Days), "Days read"}, {fmt.Sprintf("%.0f", float64(st.Seconds)/3600), "Hours"},
+		{fmt.Sprint(st.Books), "Books"}, {fmt.Sprint(st.Pages), "Pages"},
+		{fmt.Sprint(st.Quotes), "Quotes"}, {fmt.Sprint(st.Streak), "Best streak"},
 	}
 	tw := (imgW - 2*imgMargin - 5*12) / 6
 	for i, t := range tiles {
@@ -165,7 +192,7 @@ func yearPNG(idx *readingIndex, loc *time.Location, year int, now time.Time) ([]
 		mc := cals[m-1]
 		x := imgMargin
 		c.text(x, y, 2, time.Month(m).String(), imgText)
-		minTxt := fmt.Sprintf("%d MIN", mc.Minutes)
+		minTxt := fmt.Sprintf("%d min", mc.Minutes)
 		c.text(imgW-imgMargin-textW(minTxt, 1), y+4, 1, minTxt, imgMuted)
 		hy := y + 14 + 6
 		for d, n := range calDayNames {
@@ -180,17 +207,15 @@ func yearPNG(idx *readingIndex, loc *time.Location, year int, now time.Time) ([]
 	// The most-read books.
 	if len(st.Top) > 0 {
 		y += 6
-		c.text(imgMargin, y, 2, "MOST READ", imgMuted)
+		c.text(imgMargin, y, 2, "Most read", imgMuted)
 		for i, b := range st.Top {
-			line := fmt.Sprintf("%d. %s", i+1, fit(displayTitle(b.Title), (imgW-2*imgMargin)/12-14))
-			ly := y + 14 + 8 + i*18
-			c.text(imgMargin, ly, 2, line, imgText)
+			ly := y + 14 + 8 + i*imgRow
 			t := humanDuration(b.Seconds)
+			c.text(imgMargin, ly, 2, bookLine(i+1, b.Title, t), imgText)
 			c.text(imgW-imgMargin-textW(t, 2), ly, 2, t, imgMuted)
 		}
 	}
 
-	c.img.Palette = c.pal
 	var buf bytes.Buffer
 	enc := png.Encoder{CompressionLevel: png.BestSpeed}
 	if err := enc.Encode(&buf, c.img); err != nil {
@@ -237,75 +262,6 @@ func drawWeek(c *canvas, x, y int, w calWeek) {
 		c.rect(bx, by, bw, imgLane-2, blend(tone, imgCard, 35))
 		c.rect(bx, by, 3, imgLane-2, tone)
 		// The book's title, as the page prints it on the bar, cut to what the bar can hold.
-		c.text(bx+6, by+1, 1, fit(displayTitle(b.Title), (bw-8)/6), imgText)
-	}
-}
-
-// glyphs is a 5x7 bitmap font: capitals, digits and the few marks the picture uses. Rows are
-// separated by "|", "#" is ink.
-var glyphs = map[rune]string{
-	' ': ".....|.....|.....|.....|.....|.....|.....",
-	'A': ".###.|#...#|#...#|#####|#...#|#...#|#...#",
-	'B': "####.|#...#|#...#|####.|#...#|#...#|####.",
-	'C': ".###.|#...#|#....|#....|#....|#...#|.###.",
-	'D': "####.|#...#|#...#|#...#|#...#|#...#|####.",
-	'E': "#####|#....|#....|####.|#....|#....|#####",
-	'F': "#####|#....|#....|####.|#....|#....|#....",
-	'G': ".###.|#...#|#....|#.###|#...#|#...#|.###.",
-	'H': "#...#|#...#|#...#|#####|#...#|#...#|#...#",
-	'I': ".###.|..#..|..#..|..#..|..#..|..#..|.###.",
-	'J': "..###|...#.|...#.|...#.|...#.|#..#.|.##..",
-	'K': "#...#|#..#.|#.#..|##...|#.#..|#..#.|#...#",
-	'L': "#....|#....|#....|#....|#....|#....|#####",
-	'M': "#...#|##.##|#.#.#|#.#.#|#...#|#...#|#...#",
-	'N': "#...#|##..#|#.#.#|#..##|#...#|#...#|#...#",
-	'O': ".###.|#...#|#...#|#...#|#...#|#...#|.###.",
-	'P': "####.|#...#|#...#|####.|#....|#....|#....",
-	'Q': ".###.|#...#|#...#|#...#|#.#.#|#..#.|.##.#",
-	'R': "####.|#...#|#...#|####.|#.#..|#..#.|#...#",
-	'S': ".####|#....|#....|.###.|....#|....#|####.",
-	'T': "#####|..#..|..#..|..#..|..#..|..#..|..#..",
-	'U': "#...#|#...#|#...#|#...#|#...#|#...#|.###.",
-	'V': "#...#|#...#|#...#|#...#|#...#|.#.#.|..#..",
-	'W': "#...#|#...#|#...#|#.#.#|#.#.#|##.##|#...#",
-	'X': "#...#|#...#|.#.#.|..#..|.#.#.|#...#|#...#",
-	'Y': "#...#|#...#|.#.#.|..#..|..#..|..#..|..#..",
-	'Z': "#####|....#|...#.|..#..|.#...|#....|#####",
-	'0': ".###.|#...#|#..##|#.#.#|##..#|#...#|.###.",
-	'1': "..#..|.##..|..#..|..#..|..#..|..#..|.###.",
-	'2': ".###.|#...#|....#|...#.|..#..|.#...|#####",
-	'3': "####.|....#|....#|.###.|....#|....#|####.",
-	'4': "...#.|..##.|.#.#.|#..#.|#####|...#.|...#.",
-	'5': "#####|#....|####.|....#|....#|#...#|.###.",
-	'6': ".###.|#....|#....|####.|#...#|#...#|.###.",
-	'7': "#####|....#|...#.|..#..|.#...|.#...|.#...",
-	'8': ".###.|#...#|#...#|.###.|#...#|#...#|.###.",
-	'9': ".###.|#...#|#...#|.####|....#|....#|.###.",
-	'.': ".....|.....|.....|.....|.....|.....|..#..",
-	',': ".....|.....|.....|.....|.....|..#..|.#...",
-	':': ".....|..#..|.....|.....|..#..|.....|.....",
-	'-': ".....|.....|.....|.###.|.....|.....|.....",
-	'/': "....#|....#|...#.|..#..|.#...|#....|#....",
-	'%': "##..#|##..#|...#.|..#..|.#...|#..##|#..##",
-	'\'': "..#..|..#..|.#...|.....|.....|.....|.....",
-	'&': ".##..|#..#.|#.#..|.#...|#.#.#|#..#.|.##.#",
-	'(': "..#..|.#...|#....|#....|#....|.#...|..#..",
-	')': "..#..|...#.|....#|....#|....#|...#.|..#..",
-	'?': ".###.|#...#|....#|...#.|..#..|.....|..#..",
-	'!': "..#..|..#..|..#..|..#..|..#..|.....|..#..",
-	'+': ".....|..#..|..#..|#####|..#..|..#..|.....",
-}
-
-func init() {
-	// Every glyph must be seven rows of five, or the drawing silently skews.
-	for r, g := range glyphs {
-		rows := strings.Split(g, "|")
-		ok := len(rows) == 7
-		for _, row := range rows {
-			ok = ok && len(row) == 5
-		}
-		if !ok {
-			panic(fmt.Sprintf("yearimg: bad glyph %q", r))
-		}
+		c.text(bx+6, by+1, 1, fit(displayTitle(b.Title), 1, bw-8), imgText)
 	}
 }

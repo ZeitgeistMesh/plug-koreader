@@ -20,7 +20,9 @@ import (
 // Copy, written by Opus.
 const (
 	yearTitle     = "Year"
-	yearSave      = "Save as image"
+	yearView      = "View"
+	yearSaveLabel = "Save"
+	yearViewTip   = "Open this year's picture in the browser"
 	yearSaveTip   = "Download this year as a picture to share"
 	yearMonthView = "Month"
 	yearEmpty     = "Nothing read in %d."
@@ -141,9 +143,9 @@ func yearYears(idx *readingIndex, active int, now time.Time, loc *time.Location)
 // yearBar is the bar over the Year and Stats pages, the same on both: the two views to switch between,
 // the years, and Save as image for the view shown (owner, plan dab02a73). view is "/year" or "/stats".
 func yearBar(view string, idx *readingIndex, loc *time.Location, year int, now time.Time) template.HTML {
-	id, png, name, tip := "ko-year", "/year.png", "reading-", yearSaveTip
+	id, png, name, tip, viewTip := "ko-year", "/year.png", "reading-", yearSaveTip, yearViewTip
 	if view == "/stats" {
-		id, png, name, tip = "ko-stats", "/stats.png", "reading-stats-", statsSaveTip
+		id, png, name, tip, viewTip = "ko-stats", "/stats.png", "reading-stats-", statsSaveTip, statsViewTip
 	}
 	var b strings.Builder
 	b.WriteString(`<div class="ko-yearbar"><div class="field-row" role="group" aria-label="View">`)
@@ -156,9 +158,16 @@ func yearBar(view string, idx *readingIndex, loc *time.Location, year int, now t
 	}
 	b.WriteString(`</div>`)
 	b.WriteString(string(yearSwitchAt(view, id, yearYears(idx, year, now, loc), year)))
-	b.WriteString(string(webui.IconTextButton("fa-solid fa-image", yearSave, webui.BtnOpts{Kind: "secondary", Size: "sm",
-		Href:  fmt.Sprintf("%s?y=%d&dl=1", png, year),
-		Attrs: ` hx-boost="false" download="` + name + strconv.Itoa(year) + `.png" data-tip="` + template.HTMLEscapeString(tip) + `"`})))
+	// One capsule, two links (owner, plan dab02a73 e81b1fce): View opens the picture in the browser, Save
+	// downloads it. The same pair on the Year page and the Stats page.
+	b.WriteString(string(webui.ButtonGroup(
+		webui.IconTextButton("fa-solid fa-eye", yearView, webui.BtnOpts{Kind: "secondary", Size: "sm",
+			Href:  fmt.Sprintf("%s?y=%d", png, year),
+			Attrs: ` hx-boost="false" target="_blank" rel="noopener" data-tip="` + template.HTMLEscapeString(viewTip) + `"`}),
+		webui.IconTextButton("fa-solid fa-download", yearSaveLabel, webui.BtnOpts{Kind: "secondary", Size: "sm",
+			Href:  fmt.Sprintf("%s?y=%d&dl=1", png, year),
+			Attrs: ` hx-boost="false" download="` + name + strconv.Itoa(year) + `.png" data-tip="` + template.HTMLEscapeString(tip) + `"`}),
+	)))
 	b.WriteString(`</div>`)
 	return template.HTML(b.String())
 }

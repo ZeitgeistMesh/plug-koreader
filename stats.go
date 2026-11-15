@@ -25,6 +25,7 @@ import (
 const (
 	statsTitle            = "Stats"
 	statsSaveTip          = "Save this year's stats as a picture"
+	statsViewTip          = "Open this year's stats picture in the browser"
 	statsEmpty            = "Nothing read in %d."
 	statsDaysRead         = "Days read"
 	statsHours            = "Hours"
@@ -305,7 +306,7 @@ func drawBars(c *canvas, y int, head string, labels []string, vals []int) int {
 // statsPNG draws the Stats page: the title, the numbers, the books read longest and the three bar groups.
 func statsPNG(idx *readingIndex, loc *time.Location, year int) ([]byte, error) {
 	d := buildYearDetail(idx, loc, year)
-	hu := 36 + 35 + 14 + 2*(62+12) + 26 + 22 + len(d.Top)*18 + 3*22 + (7+24+12)*12 + 60
+	hu := 36 + 35 + 14 + 2*(62+12) + 26 + 22 + len(d.Top)*imgRow + 3*22 + (7+24+12)*12 + 60
 	c := newCanvas(imgW, hu)
 	c.rect(0, 0, imgW, hu, imgBG)
 	c.text(imgMargin, 36, 5, fmt.Sprintf(statsPNGTitle, year), imgText)
@@ -335,17 +336,16 @@ func statsPNG(idx *readingIndex, loc *time.Location, year int) ([]byte, error) {
 		y := 36 + 35 + 14 + 2*(62+12) + 26
 		c.text(imgMargin, y, 2, statsMostReadHead, imgMuted)
 		for i, b := range d.Top {
-			ly := y + 22 + i*18
-			c.text(imgMargin, ly, 2, fmt.Sprintf("%d. %s", i+1, fit(displayTitle(b.Title), (imgW-2*imgMargin)/12-14)), imgText)
+			ly := y + 22 + i*imgRow
 			t := humanDuration(b.Seconds)
+			c.text(imgMargin, ly, 2, bookLine(i+1, b.Title, t), imgText)
 			c.text(imgW-imgMargin-textW(t, 2), ly, 2, t, imgMuted)
 		}
-		y += 22 + len(d.Top)*18 + 22
+		y += 22 + len(d.Top)*imgRow + 22
 		y = drawBars(c, y, statsWeekdayHead, statsWeekdays[:], d.Weekday[:])
 		y = drawBars(c, y, statsHourHead, hourLabels(), d.Hour[:])
 		drawBars(c, y, statsMonthHead, monthNames(), d.Month[:])
 	}
-	c.img.Palette = c.pal
 	var buf bytes.Buffer
 	if err := (&png.Encoder{CompressionLevel: png.BestSpeed}).Encode(&buf, c.img); err != nil {
 		return nil, err
