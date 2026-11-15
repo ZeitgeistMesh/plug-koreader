@@ -133,3 +133,12 @@ func TestYearAndStatsHaveAViewAndSaveCapsule(t *testing.T) {
 		}
 	}
 }
+
+// The capsule is joined: no gap between View and Save, round only at the outer ends (owner: "make a capsule").
+func TestTheViewSaveCapsuleIsJoined(t *testing.T) {
+	for _, want := range []string{".ko-yearbar .btn-group{gap:0}", ".btn:first-child{border-radius:var(--r-cap) 0 0 var(--r-cap)}", ".btn:last-child{border-radius:0 var(--r-cap) var(--r-cap) 0;margin-left:-1px}"} {
+		if !strings.Contains(yearCSS, want) {
+			t.Errorf("the year bar CSS lacks %q", want)
+		}
+	}
+}
