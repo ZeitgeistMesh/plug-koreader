@@ -539,3 +539,40 @@ func TestTheTestButtonAnswersInlineUnderTheButtons(t *testing.T) {
 		}
 	}
 }
+
+// Owner (26856ccd a56e90e7, baf46f17): the settings page says in words whether the server connects. A plain
+// load drew the tick alone, with no sentence, so a person could not tell what it meant; and a source that was
+// never tested has nothing to say, so no tick either. The tick sits a gap away from its words.
+func TestSettingsStatusLineIsASentenceNotALoneTick(t *testing.T) {
+	a := testApp()
+	ctx := context.Background()
+	tk := tenant("status@zm.is")
+	r := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	put := func(s *Source) {
+		t.Helper()
+		s.ID = sourceDocID
+		if err := a.sources.Put(ctx, tk, sourceDocID, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(&Source{URL: "https://books.zm.is", TestedAt: nowRFC(), Title: "XF Books"})
+	body := a.settingsBody(r, tk, "", false)
+	if !strings.Contains(body, `fa-circle-check" aria-hidden="true"></i>Connected to XF Books.`) {
+		t.Errorf("a tested server must read as a sentence beside its tick: %s", body[strings.Index(body, `id="rd-result"`):])
+	}
+	put(&Source{URL: "https://books.zm.is", TestedAt: nowRFC()}) // tested before the name was kept
+	if body := a.settingsBody(r, tk, "", false); !strings.Contains(body, "Connected to your server.") {
+		t.Error("a server with no stored name still gets a sentence")
+	}
+	put(&Source{URL: "https://books.zm.is", TestedAt: nowRFC(), TestError: "Could not reach your server."})
+	if body := a.settingsBody(r, tk, "", false); !strings.Contains(body, "Could not reach your server.") || !strings.Contains(body, "fa-circle-xmark") {
+		t.Error("a failed test keeps its reason and its cross")
+	}
+	put(&Source{URL: "https://books.zm.is"}) // never tested
+	if body := a.settingsBody(r, tk, "", false); strings.Contains(body, "fa-circle-check") || strings.Contains(body, "fa-circle-xmark") {
+		t.Error("a never-tested source shows no tick")
+	}
+	if !strings.Contains(readerBooksCSS, ".rd-result .rd-msg{display:inline-flex;align-items:center;gap:var(--sp-2)}") {
+		t.Error("the tick has no gap before its words")
+	}
+}

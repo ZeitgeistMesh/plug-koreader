@@ -42,6 +42,7 @@ type Source struct {
 	// Secret is the password, sealed. Never sent to a page, a capability answer or a log.
 	Secret    string `json:"secret,omitempty"`
 	Root      string `json:"root,omitempty"` // the feed address found at the last test
+	Title     string `json:"title,omitempty"`  // the server name from the last good test, for the settings status line
 	TestedAt  string `json:"tested_at,omitempty"`
 	TestError string `json:"test_error,omitempty"`
 	Subject   string `json:"subject,omitempty"`
@@ -224,6 +225,7 @@ func testResult(ctx context.Context, c *opdsClient, rec *Source, tk dblib.Tenant
 			rec.TestError = err.Error()
 		} else {
 			rec.Root = root
+			rec.Title = f.Title
 		}
 		_ = a.sources.Put(ctx, tk, sourceDocID, rec)
 	}

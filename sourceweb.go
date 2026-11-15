@@ -47,6 +47,7 @@ const readerBooksCSS = `
 .rd-result{display:flex;align-items:center;gap:var(--sp-2);margin:0;min-height:var(--control-h)}
 .rd-result.ok{color:var(--ok,var(--accent))}
 .rd-result.bad{color:var(--danger-text)}
+.rd-result .rd-msg{display:inline-flex;align-items:center;gap:var(--sp-2)}
 .rd-result .rd-wait{display:none}
 .rd-result.htmx-request .rd-wait{display:inline}
 .rd-result.htmx-request .rd-msg{display:none}
@@ -156,6 +157,11 @@ func (a *app) settingsBody(r *http.Request, tk dblib.TenantKey, note string, bad
 		line, state = ui.StatusNone, ""
 	case s.TestError != "":
 		line, state = s.TestError, "bad"
+	case s.TestedAt != "":
+		// A page load shows the last test in words. It used to draw the tick alone, with no sentence.
+		line = fill(ui.StatusOK, "server", serverName(map[string]any{"title": s.Title}))
+	default:
+		state = "" // never tested: nothing to say, so no tick either
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, `<div id="%s">`, settingsRoot)
