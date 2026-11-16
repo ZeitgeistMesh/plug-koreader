@@ -33,8 +33,9 @@ const (
 // calBar is one book's run of consecutive reading days inside one week row.
 type calBar struct {
 	MD5, Title string
-	Col, Span  int // 1-based start column, days covered
-	Lane       int // 1-based
+	key        string // the book (bookKey), which may span several md5s
+	Col, Span  int    // 1-based start column, days covered
+	Lane       int    // 1-based
 	Tone       int
 	FirstDay   string
 	Quotes     bool
@@ -56,11 +57,11 @@ type calWeek struct {
 }
 
 type monthCal struct {
-	Month                  string // 2026-11
+	Month                    string // 2026-11
 	Prev, Next, PrevY, NextY string
-	Weeks                  []calWeek
-	Books                  int
-	Minutes                int
+	Weeks                    []calWeek
+	Books                    int
+	Minutes                  int
 }
 
 func parseMonth(s string, loc *time.Location, now time.Time) time.Time {
@@ -69,6 +70,39 @@ func parseMonth(s string, loc *time.Location, now time.Time) time.Time {
 	}
 	n := now.In(loc)
 	return time.Date(n.Year(), n.Month(), 1, 0, 0, 0, 0, loc)
+}
+
+// bookKey is what makes two reading rows the same book on the calendar: its title as shown,
+// ignoring case, so copies of one book with different md5s are one book; the md5 when it has no
+// title.
+func bookKey(md5, title string) string {
+	if t := strings.ToLower(strings.TrimSpace(displayTitle(title))); t != "" {
+		return t
+	}
+	return md5
+}
+
+// yearTones is each book's tone for a calendar year: in the order the books were first read that
+// year, round the palette, so books read one after another differ and a book keeps its tone on
+// every day of the year it appears.
+func yearTones(idx *readingIndex, year int) map[string]int {
+	tone := map[string]int{}
+	prefix := fmt.Sprintf("%04d-", year)
+	for _, date := range idx.Dates {
+		if !strings.HasPrefix(date, prefix) {
+			continue
+		}
+		if ds := idx.Days[date]; ds != nil {
+			for _, bd := range ds.Books {
+				if k := bookKey(bd.BookMD5, bd.Title); k != "" {
+					if _, ok := tone[k]; !ok {
+						tone[k] = len(tone) % calTones
+					}
+				}
+			}
+		}
+	}
+	return tone
 }
 
 // buildMonthCal is pure: the index, the zone and a month in, the grid out.
@@ -86,12 +120,16 @@ func buildMonthCal(idx *readingIndex, loc *time.Location, month, now time.Time) 
 		PrevY: first.AddDate(-1, 0, 0).Format("2006-01"), NextY: first.AddDate(1, 0, 0).Format("2006-01"),
 	}
 
-	// One tone per book, by order of first appearance in the month, so neighbours differ.
-	tone := map[string]int{}
-	quotes := map[string]bool{}
+	// One tone per book for the whole calendar year (owner, dab02a73: "needs continuous colors
+	// for the same book"), so a book keeps its colour from week to week, month to month, on the
+	// year page and in its image. A book is its title: two copies of one book (a re-download, a
+	// second edition: two md5s) are one bar in one colour.
+	tone := yearTones(idx, first.Year())
+	quoted := map[string]bool{}
 	for _, an := range idx.Highlights() {
-		quotes[an.BookMD5] = true
+		quoted[an.BookMD5] = true
 	}
+	quotes := map[string]bool{}
 	books := map[string]bool{}
 
 	for ws := start; !ws.After(last); ws = ws.AddDate(0, 0, 7) {
@@ -101,8 +139,9 @@ func buildMonthCal(idx *readingIndex, loc *time.Location, month, now time.Time) 
 			col   int
 			secs  int
 		}
-		perBook := map[string][]int{} // md5 -> columns read (0-based)
+		perBook := map[string][]int{} // book -> columns read (0-based)
 		titles := map[string]string{}
+		md5s := map[string]string{} // book -> the first copy read, for the bar's link
 		secs := map[string]int{}
 		for c := 0; c < 7; c++ {
 			d := ws.AddDate(0, 0, c)
@@ -128,13 +167,17 @@ func buildMonthCal(idx *readingIndex, loc *time.Location, month, now time.Time) 
 					}
 				}
 				for _, bd := range ds.Books {
-					perBook[bd.BookMD5] = append(perBook[bd.BookMD5], c)
-					titles[bd.BookMD5] = bd.Title
-					secs[bd.BookMD5] += bd.Seconds
-					books[bd.BookMD5] = true
-					if _, ok := tone[bd.BookMD5]; !ok {
-						tone[bd.BookMD5] = len(tone) % calTones
+					k := bookKey(bd.BookMD5, bd.Title)
+					if cols := perBook[k]; len(cols) == 0 || cols[len(cols)-1] != c {
+						perBook[k] = append(cols, c)
 					}
+					titles[k] = bd.Title
+					if md5s[k] == "" {
+						md5s[k] = bd.BookMD5
+					}
+					secs[k] += bd.Seconds
+					books[k] = true
+					quotes[k] = quotes[k] || quoted[bd.BookMD5]
 				}
 				out.Minutes += ds.Minutes()
 			}
@@ -142,7 +185,7 @@ func buildMonthCal(idx *readingIndex, loc *time.Location, month, now time.Time) 
 		}
 		// Runs of consecutive columns per book.
 		var bars []calBar
-		for md5, cols := range perBook {
+		for k, cols := range perBook {
 			sort.Ints(cols)
 			i := 0
 			for i < len(cols) {
@@ -150,8 +193,8 @@ func buildMonthCal(idx *readingIndex, loc *time.Location, month, now time.Time) 
 				for j+1 < len(cols) && cols[j+1] == cols[j]+1 {
 					j++
 				}
-				bars = append(bars, calBar{MD5: md5, Title: displayTitle(titles[md5]), Col: cols[i] + 1,
-					Span: cols[j] - cols[i] + 1, Tone: tone[md5], FirstDay: w.Days[cols[i]].Date, Quotes: quotes[md5]})
+				bars = append(bars, calBar{MD5: md5s[k], key: k, Title: displayTitle(titles[k]), Col: cols[i] + 1,
+					Span: cols[j] - cols[i] + 1, Tone: tone[k], FirstDay: w.Days[cols[i]].Date, Quotes: quotes[k]})
 				i = j + 1
 			}
 		}
@@ -159,10 +202,10 @@ func buildMonthCal(idx *readingIndex, loc *time.Location, month, now time.Time) 
 			if bars[i].Col != bars[j].Col {
 				return bars[i].Col < bars[j].Col
 			}
-			if secs[bars[i].MD5] != secs[bars[j].MD5] {
-				return secs[bars[i].MD5] > secs[bars[j].MD5]
+			if secs[bars[i].key] != secs[bars[j].key] {
+				return secs[bars[i].key] > secs[bars[j].key]
 			}
-			return bars[i].MD5 < bars[j].MD5
+			return bars[i].key < bars[j].key
 		})
 		var laneEnd [maxLanes]int
 		for _, b := range bars {
