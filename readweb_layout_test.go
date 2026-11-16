@@ -14,7 +14,7 @@ func TestTheReaderFillsTheWindowAndTheFooterIsBelowIt(t *testing.T) {
 			t.Errorf("%s: the reader is fitted around what is below it", name)
 		}
 	}
-	if !strings.Contains(readerReadCSS, ".rd-text{max-width:48rem;") {
-		t.Error("the text column is not 48rem")
+	if !strings.Contains(readerReadCSS, ".rd-text{max-width:70ch;") {
+		t.Error("the text column is not 70ch (about 75 characters a line)")
 	}
 }
