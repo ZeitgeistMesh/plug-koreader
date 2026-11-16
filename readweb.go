@@ -24,6 +24,9 @@ import (
 	"xf/controller/pkg/webui"
 )
 
+// The reader fills the window from its own top to the window's bottom; the site footer is below
+// the fold (owner, 26856ccd 7ae0706f: "make use of the space a bit better", the footer was taking
+// the page's height). The text column is 48rem, a comfortable line on a wide window.
 const readerReadCSS = `
 .rd-shell{display:flex;flex-direction:column;height:calc(100dvh - var(--rd-chrome, 19rem));min-height:16rem}
 .rd-shell>.rd-text{flex:1 1 auto;min-height:0;overflow-y:auto;width:100%;box-sizing:border-box;padding-inline:var(--sp-3)}
@@ -32,7 +35,7 @@ const readerReadCSS = `
 .rd-toc{margin-block:var(--sp-3)}
 .rd-toc ol{margin:0;padding-inline-start:var(--sp-5)}
 .rd-toc a[aria-current]{font-weight:700}
-.rd-text{max-width:42rem;margin-inline:auto;line-height:1.7;font-size:1.125rem;overflow-wrap:anywhere}
+.rd-text{max-width:48rem;margin-inline:auto;line-height:1.7;font-size:1.125rem;overflow-wrap:anywhere}
 .rd-text img{max-width:100%;height:auto}
 .rd-text :is(h1,h2,h3){line-height:1.3}
 .rd-quote{position:fixed;z-index:20;display:none}
@@ -46,8 +49,8 @@ const readerReadJS = `<script>
 var t=document.getElementById('rd-text');if(!t)return;
 var d=t.dataset,pos=document.getElementById('rd-pos'),st=document.getElementById('rd-status'),qb=document.getElementById('rd-quote');
 function fit(){var s=document.getElementById('rd-shell');if(!s)return;s.style.setProperty('--rd-chrome','0px');
-var top=s.getBoundingClientRect().top+window.scrollY,below=document.documentElement.scrollHeight-top-s.offsetHeight;
-s.style.setProperty('--rd-chrome',Math.max(top+below,0)+'px');}
+var top=s.getBoundingClientRect().top+window.scrollY;
+s.style.setProperty('--rd-chrome',Math.max(top,0)+'px');}
 if(window.__rdFit)window.removeEventListener('resize',window.__rdFit);window.__rdFit=fit;window.addEventListener('resize',fit);fit();
 if(document.readyState!=='complete')window.addEventListener('load',fit);setTimeout(fit,0);
 var p0=parseFloat(d.p0),p1=parseFloat(d.p1),frac=parseFloat(d.frac)||0,timer=null,lastSent=-1;

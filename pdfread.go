@@ -74,8 +74,8 @@ var t=document.getElementById('rd-text');if(!t||!window.pdfjsLib){var m=document
 var d=t.dataset,box=document.getElementById('rd-pdfpage'),pos=document.getElementById('rd-pos'),st=document.getElementById('rd-status'),qb=document.getElementById('rd-quote');
 var prev=document.getElementById('rd-prev'),next=document.getElementById('rd-next'),toc=document.getElementById('rd-toc'),msg=document.getElementById('rd-pdfmsg');
 function fit(){var s=document.getElementById('rd-shell');if(!s)return;s.style.setProperty('--rd-chrome','0px');
-var top=s.getBoundingClientRect().top+window.scrollY,below=document.documentElement.scrollHeight-top-s.offsetHeight;
-s.style.setProperty('--rd-chrome',Math.max(top+below,0)+'px');}
+var top=s.getBoundingClientRect().top+window.scrollY;
+s.style.setProperty('--rd-chrome',Math.max(top,0)+'px');}
 if(window.__rdFit)window.removeEventListener('resize',window.__rdFit);window.__rdFit=fit;window.addEventListener('resize',fit);fit();
 if(document.readyState!=='complete')window.addEventListener('load',fit);setTimeout(fit,0);
 pdfjsLib.GlobalWorkerOptions.workerSrc=d.worker;
