@@ -74,6 +74,9 @@ const readerPDFCSS = `
 // complete without scrolling, and a scanned page is not blown up past the window. The canvas is
 // drawn at its CSS size times devicePixelRatio (rounded up, never stretched from a smaller
 // bitmap) and redrawn on resize; the text layer takes the same viewport, so it stays aligned.
+// The area is watched, not just the window: the Contents list appears only once the outline has
+// loaded, after the first page is drawn, and takes 49px from the area (integrity's proof of
+// e4ea35b: an 808px page in a 759px area). A change of more than a pixel redraws the page.
 const readerPDFJS = `<script>
 (function(){
 var t=document.getElementById('rd-text');if(!t||!window.pdfjsLib){var m=document.getElementById('rd-pdfmsg');if(m)m.hidden=false;return;}
@@ -96,9 +99,11 @@ function send(){if(!N)return;var f=now(),key=cur+':'+f.toFixed(3);if(key===lastK
 post(d.progressUrl,{book:d.book,chapter:cur,frac:f,percent:pct(f),title:d.title},true).catch(function(){});}
 function later(){show(now());clearTimeout(timer);timer=setTimeout(send,1500);}
 function fail(){if(msg)msg.hidden=false;if(box)box.hidden=true;}
+function area(){var cs=getComputedStyle(t);return [Math.max(t.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight),200),Math.max(t.clientHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom),200)];}
+var drawnW=0,drawnH=0;
 function draw(n,frac){var my=++token;wantFrac=frac||0;
 doc.getPage(n+1).then(function(pg){if(my!==token)return;
-var cs=getComputedStyle(t),aw=Math.max(t.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight),200),ah=Math.max(t.clientHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom),200);
+var a=area(),aw=a[0],ah=a[1];drawnW=aw;drawnH=ah;
 var v0=pg.getViewport({scale:1}),vp=pg.getViewport({scale:rdFit(aw,ah,v0.width,v0.height)}),r=window.devicePixelRatio||1,sz=rdCanvas(vp.width,vp.height,r);
 var cv=document.createElement('canvas');cv.width=sz.pw;cv.height=sz.ph;cv.style.width=sz.cw+'px';cv.style.height=sz.ch+'px';
 var tl=document.createElement('div');tl.className='rd-textlayer';tl.style.setProperty('--scale-factor',vp.scale);
@@ -117,6 +122,8 @@ if(window.__rdPageHide)window.removeEventListener('pagehide',window.__rdPageHide
 window.__rdPageHide=function(){send();};window.addEventListener('pagehide',window.__rdPageHide);
 if(window.__rdVis)document.removeEventListener('visibilitychange',window.__rdVis);window.__rdVis=function(){if(document.hidden)send();};document.addEventListener('visibilitychange',window.__rdVis);
 var rt=null;window.addEventListener('resize',function(){clearTimeout(rt);rt=setTimeout(function(){if(doc)draw(cur,now());},250);});
+if(window.ResizeObserver)new ResizeObserver(function(){if(!doc||!drawnH)return;var a=area();if(Math.abs(a[0]-drawnW)<=1&&Math.abs(a[1]-drawnH)<=1)return;
+clearTimeout(rt);rt=setTimeout(function(){draw(cur,now());},100);}).observe(t);
 function outline(items,depth,ol){(items||[]).forEach(function(it){
 var li=document.createElement('li');li.setAttribute('data-depth',String(Math.min(depth,2)));var a=document.createElement('a');a.textContent=it.title||'';
 a.addEventListener('click',function(e){e.preventDefault();pageOf(it.dest).then(function(i){if(i>=0)go(i,0);});});li.appendChild(a);ol.appendChild(li);outline(it.items,depth+1,ol);});}

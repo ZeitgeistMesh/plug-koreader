@@ -15,6 +15,12 @@ func TestAPDFPageFitsWholeAndIsDrawnAtDevicePixels(t *testing.T) {
 	if !strings.Contains(readerPDFJS, "rdFit(aw,ah,v0.width,v0.height)") || !strings.Contains(readerPDFJS, "rdCanvas(vp.width,vp.height,r)") {
 		t.Fatal("the page is not drawn through rdFit and rdCanvas")
 	}
+	// The area shrinks after the first draw when the Contents list appears (49px on the owner's
+	// book), so the page is redrawn when the area changes, not only when the window does.
+	if !strings.Contains(readerPDFJS, "new ResizeObserver(") || !strings.Contains(readerPDFJS, ".observe(t)") ||
+		!strings.Contains(readerPDFJS, "drawnW=aw;drawnH=ah;") {
+		t.Error("the page is not redrawn when the reading area changes size")
+	}
 	if strings.Contains(readerPDFJS, "sc=w/v0.width") {
 		t.Error("the page is still fitted to the width alone")
 	}
