@@ -32,7 +32,8 @@ const readerReadCSS = `
 main:has(>.rd-shell){max-width:none}
 @media(min-width:64rem){main:has(>.rd-shell){padding-inline:var(--sp-6)}}
 .rd-shell{display:flex;flex-direction:column;height:calc(100dvh - var(--rd-chrome, 19rem));min-height:16rem}
-.rd-shell>.rd-text{flex:1 1 auto;min-height:0;overflow-y:auto;width:100%;box-sizing:border-box;padding-inline:var(--sp-3)}
+.rd-shell>.rd-text{flex:1 1 auto;min-height:0;overflow-y:auto;scrollbar-gutter:stable;width:100%;box-sizing:border-box;padding-inline:var(--sp-3)}
+.rd-shell>.rd-bar,.rd-shell>.rd-toc{width:100%;max-width:56rem;margin-inline:auto;box-sizing:border-box}
 .rd-bar{display:flex;flex-wrap:wrap;gap:var(--sp-3);align-items:center;justify-content:space-between;margin-block:var(--sp-3)}
 .rd-bar .rd-pos{min-width:calc(var(--sp-6) * 3)}
 .rd-toc{margin-block:var(--sp-3)}

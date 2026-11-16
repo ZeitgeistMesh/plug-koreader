@@ -32,4 +32,13 @@ func TestTheReaderLeavesTheCentreColumnOnAWideWindow(t *testing.T) {
 	if strings.Contains(readerPDFCSS, "60rem") {
 		t.Error("the PDF keeps a fixed cap")
 	}
+	// Web's proof of 05d5422: the page was fitted before its own scrollbar came, so it ran 15px
+	// wide and drew a sideways scrollbar. The gutter is kept, so the width the fit reads is final.
+	if !strings.Contains(readerReadCSS, "overflow-y:auto;scrollbar-gutter:stable;") {
+		t.Error("the reader's scrollbar gutter is not reserved")
+	}
+	// The bar and Contents stay in the header's 56rem column; only the page itself is wide.
+	if !strings.Contains(readerReadCSS, ".rd-shell>.rd-bar,.rd-shell>.rd-toc{width:100%;max-width:56rem;margin-inline:auto;") {
+		t.Error("the reader's bar is not in the header's column")
+	}
 }
