@@ -215,7 +215,7 @@ const yearCSS = `<style>
 .ko-yearbar .btn-group>.btn:first-child{border-radius:var(--r-cap) 0 0 var(--r-cap)}
 .ko-yearbar .btn-group>.btn:last-child{border-radius:0 var(--r-cap) var(--r-cap) 0;margin-left:-1px}
 .ko-ygrid{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--sp-4);margin-top:var(--sp-2)}
-.ko-ymonth{min-width:0}
+.ko-ymonth{min-width:0;scroll-margin-top:calc(var(--sp-6)*2 + var(--sp-2))} /* clear of the sticky site header when a month is scrolled to */
 .ko-ymonth h3{margin:0 0 var(--sp-1);font-size:1rem}
 .ko-ymonth h3 a{color:var(--text-hi);text-decoration:none}
 </style>`

@@ -48,6 +48,7 @@ type calDay struct {
 	Today   bool
 	Minutes int
 	Ticks   [tickBuckets]int // 0 none .. 4 most
+	Titles  []string         // the books read that day, in full: the day's house hint
 }
 
 type calWeek struct {
@@ -166,10 +167,15 @@ func buildMonthCal(idx *readingIndex, loc *time.Location, month, now time.Time) 
 						cd.Ticks[i] = 4
 					}
 				}
+				onDay := map[string]bool{}
 				for _, bd := range ds.Books {
 					k := bookKey(bd.BookMD5, bd.Title)
 					if cols := perBook[k]; len(cols) == 0 || cols[len(cols)-1] != c {
 						perBook[k] = append(cols, c)
+					}
+					if !onDay[k] {
+						onDay[k] = true
+						cd.Titles = append(cd.Titles, displayTitle(bd.Title))
 					}
 					titles[k] = bd.Title
 					if md5s[k] == "" {
@@ -304,7 +310,7 @@ func renderMonthGrid(c monthCal) template.HTML {
 			if d.Today {
 				box += " ko-boxtoday"
 			}
-			fmt.Fprintf(&b, `<a class="%s" href="/day?d=%s" tabindex="-1" aria-hidden="true"></a>`, box, d.Date)
+			fmt.Fprintf(&b, `<a class="%s" href="/day?d=%s" tabindex="-1" aria-hidden="true"%s></a>`, box, d.Date, dayTip(d))
 		}
 		for i, d := range w.Days {
 			if !d.InMonth {
@@ -318,19 +324,22 @@ func renderMonthGrid(c monthCal) template.HTML {
 			if d.Minutes > 0 {
 				label = fmt.Sprintf("%s: %d min", d.Date, d.Minutes)
 			}
-			fmt.Fprintf(&b, `<a class="%s ko-r1" href="/day?d=%s" aria-label="%s">%d</a>`, cls, d.Date, label, d.Num)
+			fmt.Fprintf(&b, `<a class="%s ko-r1" href="/day?d=%s" aria-label="%s"%s>%d</a>`, cls, d.Date, label, dayTip(d), d.Num)
 		}
 		for _, bar := range w.Bars {
 			// A bar is a label only: a click on it falls through to the day box beneath, so a click
-			// anywhere in a day box opens THAT day, whichever book's bar crosses it.
-			fmt.Fprintf(&b, `<span class="ko-bar ko-a%d ko-n%d ko-r%d ko-t%d" title="%s">%s</span>`,
-				bar.Col, bar.Span, bar.Lane+1, bar.Tone, template.HTMLEscapeString(bar.Title), webui.Text(bar.Title))
+			// anywhere in a day box opens THAT day, whichever book's bar crosses it. A one-day cell
+			// is too narrow for most titles, and the owner's grid has fixed rows (4 books and the
+			// ticks), so a title may end in "…"; the full titles are the day's house hint, on the
+			// box, the day number and the ticks, which is what the pointer is over.
+			fmt.Fprintf(&b, `<span class="ko-bar ko-a%d ko-n%d ko-r%d ko-t%d">%s</span>`,
+				bar.Col, bar.Span, bar.Lane+1, bar.Tone, webui.Text(bar.Title))
 		}
 		for i, d := range w.Days {
 			if d.Minutes == 0 {
 				continue
 			}
-			fmt.Fprintf(&b, `<a class="ko-ticks ko-a%d ko-r%d" href="/day?d=%s" aria-label="%s">`, i+1, tickRow, d.Date, d.Date)
+			fmt.Fprintf(&b, `<a class="ko-ticks ko-a%d ko-r%d" href="/day?d=%s" aria-label="%s"%s>`, i+1, tickRow, d.Date, d.Date, dayTip(d))
 			for _, t := range d.Ticks {
 				fmt.Fprintf(&b, `<i class="ko-k%d"></i>`, t)
 			}
@@ -341,6 +350,9 @@ func renderMonthGrid(c monthCal) template.HTML {
 	b.WriteString(`</div>`)
 	return template.HTML(b.String())
 }
+
+// dayTip is a day's house hint: the full title of every book read that day, one a line.
+func dayTip(d calDay) string { return webui.TipAttr(strings.Join(d.Titles, "\n")) }
 
 // koCalCSS: row classes r1..r8, column starts a1..a7, spans n1..n7, tones t0..t4.
 func koCalCSS() string {
@@ -353,7 +365,7 @@ func koCalCSS() string {
 .ko-mhead{column-gap:var(--sp-1);font-size:.75rem;color:var(--muted);text-align:center}
 .ko-mcal{--ko-row:calc(.72rem*1.5)}
 .ko-week{column-gap:var(--sp-1);row-gap:2px;padding-bottom:var(--sp-1);grid-template-rows:auto repeat(5,var(--ko-row))}
-.ko-box{grid-row:1/-1;display:block;border:1px solid var(--border);border-radius:var(--r-chip,4px);background:var(--card)}
+.ko-box{grid-row:1/-1;display:block;border:1px solid var(--border);border-radius:var(--r);background:var(--card)}
 .ko-boxout{background:transparent;border-color:transparent}
 .ko-boxtoday{border-color:var(--accent)}
 .ko-dn{padding:var(--sp-1) var(--sp-1) 0;font-size:.8rem;color:var(--text)}
@@ -362,7 +374,7 @@ func koCalCSS() string {
 a.ko-dn{text-decoration:none}
 .ko-bar{display:block;pointer-events:none;min-width:0;margin:0 1px;padding:0 var(--sp-1);font-size:.72rem;line-height:1.5;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-hi);text-decoration:none;
-  border-radius:var(--r-chip,4px);border-left:3px solid var(--bar)}
+  border-radius:var(--r);border-left:3px solid var(--bar)}
 .ko-ticks{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));align-items:end;height:var(--ko-row);margin:0 1px 1px}
 .ko-ticks i{display:block;background:var(--muted);border-radius:1px}
 .ko-k0{height:1px;opacity:.3}.ko-k1{height:25%}.ko-k2{height:50%}.ko-k3{height:75%}.ko-k4{height:100%}

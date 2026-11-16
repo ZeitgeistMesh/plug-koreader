@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -52,5 +53,37 @@ func TestABookKeepsOneColourAcrossTheYear(t *testing.T) {
 		if tones["Emma"][d] {
 			t.Errorf("Dune and Emma, read side by side, share tone %d", d)
 		}
+	}
+}
+
+// pagelint on /year (integrity, 16 Nov): 820 corners off the house scale (4px day boxes and bars)
+// and 46 one-day bar titles cut with "…", and a month scrolled to sat under the sticky header.
+// Boxes and bars take the house corner (a 17px bar at 9px reads as round, which the scale
+// allows); the rows stay fixed, so the full titles are the day's house hint, on whatever the
+// pointer is over (the box, the day number, the ticks; a bar lets the pointer through).
+func TestTheYearGridTakesTheHouseCornerAndHintsFullTitles(t *testing.T) {
+	css := koCalCSS()
+	if strings.Contains(css, "--r-chip,4px") || strings.Count(css, "border-radius:var(--r)") < 2 {
+		t.Error("the day boxes or bars are off the house corner")
+	}
+	if !strings.Contains(yearCSS, "scroll-margin-top:") {
+		t.Error("a month heading scrolls under the sticky header")
+	}
+	long := "A Short History of Nearly Everything"
+	at := time.Date(2026, 7, 7, 20, 0, 0, 0, time.UTC).Unix()
+	ev := []ReadEvent{
+		{ID: "1", Kind: KindRead, BookMD5: "s1", Title: long, Page: 1, StartTime: at, Duration: 900},
+		{ID: "2", Kind: KindRead, BookMD5: "s2", Title: long, Page: 2, StartTime: at + 60, Duration: 900},
+		{ID: "3", Kind: KindRead, BookMD5: "e", Title: "Emma", Page: 3, StartTime: at + 120, Duration: 900},
+	}
+	idx := buildReadingIndex(ev, time.UTC)
+	c := buildMonthCal(idx, time.UTC, time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC))
+	page := string(renderMonthCal(c))
+	tip := `data-tip="` + long + "\nEmma" + `"`
+	if n := strings.Count(page, tip); n != 3 {
+		t.Errorf("the day's hint (both titles in full, once each) is on %d of box, number and ticks", n)
+	}
+	if strings.Contains(page, `class="ko-bar`) && strings.Contains(page, `title="`) {
+		t.Error("a bar still carries a native title")
 	}
 }
