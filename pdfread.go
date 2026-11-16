@@ -68,6 +68,12 @@ const readerPDFCSS = `
 
 // readerPDFJS draws one page at a time, keeps the place as the page scrolls and as the page turns,
 // and offers a selected passage to the same highlight route the EPUB reader uses.
+//
+// A page is fitted WHOLE into the reading area (owner, 26856ccd: "this is too big it needs to fit
+// -- its also upscaled"): the smaller of the width fit and the height fit, so one page shows
+// complete without scrolling, and a scanned page is not blown up past the window. The canvas is
+// drawn at its CSS size times devicePixelRatio (rounded up, never stretched from a smaller
+// bitmap) and redrawn on resize; the text layer takes the same viewport, so it stays aligned.
 const readerPDFJS = `<script>
 (function(){
 var t=document.getElementById('rd-text');if(!t||!window.pdfjsLib){var m=document.getElementById('rd-pdfmsg');if(m)m.hidden=false;return;}
@@ -80,6 +86,7 @@ if(window.__rdFit)window.removeEventListener('resize',window.__rdFit);window.__r
 if(document.readyState!=='complete')window.addEventListener('load',fit);setTimeout(fit,0);
 pdfjsLib.GlobalWorkerOptions.workerSrc=d.worker;
 var doc=null,N=0,cur=0,timer=null,lastKey='',token=0,wantFrac=0,opened=false;
+` + readerPDFFitJS + `
 function room(){return Math.max(t.scrollHeight-t.clientHeight,1);}
 function now(){return Math.min(Math.max(t.scrollTop/room(),0),1);}
 function pct(f){return N?Math.min(100,(cur+f)/N*100):0;}
@@ -91,8 +98,9 @@ function later(){show(now());clearTimeout(timer);timer=setTimeout(send,1500);}
 function fail(){if(msg)msg.hidden=false;if(box)box.hidden=true;}
 function draw(n,frac){var my=++token;wantFrac=frac||0;
 doc.getPage(n+1).then(function(pg){if(my!==token)return;
-var w=Math.max(t.clientWidth-parseFloat(getComputedStyle(t).paddingInline)*2,200),v0=pg.getViewport({scale:1}),sc=w/v0.width,vp=pg.getViewport({scale:sc}),r=window.devicePixelRatio||1;
-var cv=document.createElement('canvas');cv.width=Math.floor(vp.width*r);cv.height=Math.floor(vp.height*r);cv.style.width=Math.floor(vp.width)+'px';cv.style.height=Math.floor(vp.height)+'px';
+var cs=getComputedStyle(t),aw=Math.max(t.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight),200),ah=Math.max(t.clientHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom),200);
+var v0=pg.getViewport({scale:1}),vp=pg.getViewport({scale:rdFit(aw,ah,v0.width,v0.height)}),r=window.devicePixelRatio||1,sz=rdCanvas(vp.width,vp.height,r);
+var cv=document.createElement('canvas');cv.width=sz.pw;cv.height=sz.ph;cv.style.width=sz.cw+'px';cv.style.height=sz.ch+'px';
 var tl=document.createElement('div');tl.className='rd-textlayer';tl.style.setProperty('--scale-factor',vp.scale);
 return pg.render({canvasContext:cv.getContext('2d'),viewport:vp,intent:document.hidden?'print':'display',transform:r!==1?[r,0,0,r,0,0]:null}).promise.then(function(){
 if(my!==token)return;box.replaceChildren(cv,tl);
@@ -198,3 +206,9 @@ func (a *app) servePDFRead(w http.ResponseWriter, r *http.Request, tk dblib.Tena
 	fmt.Fprint(w, fullStrip(), readerPDFJS, `</div>`, readerFullJS)
 	p.End(w)
 }
+
+// readerPDFFitJS is the page fit as two pure functions, so the test can run them: rdFit is the
+// scale that fits a pw×ph page whole into an aw×ah area; rdCanvas is the canvas for a vw×vh CSS
+// viewport at device pixel ratio r: CSS size in whole pixels, bitmap at least CSS size × r.
+const readerPDFFitJS = `function rdFit(aw,ah,pw,ph){return Math.min(aw/pw,ah/ph);}
+function rdCanvas(vw,vh,r){var cw=Math.floor(vw),ch=Math.floor(vh);return {cw:cw,ch:ch,pw:Math.ceil(cw*r),ph:Math.ceil(ch*r)};}`
