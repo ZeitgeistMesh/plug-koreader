@@ -208,7 +208,9 @@ func libraryRow(b libBook) webui.Row {
 	cover := webui.Text("")
 	full := displayTitle(b.title())
 	// Two lines at most, so a long title does not make its row tall; the whole title is the tooltip.
-	title := template.HTML(`<span class="rd-title" title="` + html.EscapeString(full) + `">` + html.EscapeString(full) + `</span>`)
+	// The whole title, wrapped: no clamp and no native tooltip repeating it (pagelint /books: five
+	// titles cut at two lines; the owner never asked for even rows, only aligned buttons).
+	title := template.HTML(`<span class="rd-title">` + html.EscapeString(full) + `</span>`)
 	if strings.TrimSpace(b.title()) == "" {
 		// A reading the device sent with no title cannot be matched to a book on the server. Say so,
 		// rather than a bare "Untitled" beside an author nobody recognises.

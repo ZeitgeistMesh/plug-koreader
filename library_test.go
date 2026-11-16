@@ -113,13 +113,18 @@ func TestLibraryTitleDoubleEscapedByTheFeed(t *testing.T) {
 	}
 }
 
-// A long title is clamped to two lines (full text is the tooltip) and the action cell fits its content.
-func TestLibraryRowsStayEvenHeight(t *testing.T) {
-	rows, _ := libraryRows(buildLibrary([]CatalogEntry{{ID: "u", Title: strings.Repeat("Long ", 30)}}, nil), webui.ListQuery{Page: 1, PageSize: 25}, false)
-	if got := string(rows[0]["title"]); !strings.Contains(got, `class="rd-title" title="Long Long`) {
+// A long title shows in full, wrapped (pagelint /books, 16 Nov: five titles cut at two lines), with
+// no native tooltip repeating it; the action cell still fits its content, so the buttons line up.
+func TestLibraryTitlesWrapInFullAndTheButtonsLineUp(t *testing.T) {
+	long := strings.TrimSpace(strings.Repeat("Long ", 30))
+	rows, _ := libraryRows(buildLibrary([]CatalogEntry{{ID: "u", Title: long}}, nil), webui.ListQuery{Page: 1, PageSize: 25}, false)
+	if got := string(rows[0]["title"]); got != `<span class="rd-title">`+long+`</span>` {
 		t.Errorf("title = %s", got)
 	}
-	for _, want := range []string{"-webkit-line-clamp:2", "td[data-k=formats]{width:1%;white-space:nowrap;text-align:right}"} {
+	if strings.Contains(readerBooksCSS, "line-clamp") {
+		t.Error("a title is still clamped")
+	}
+	for _, want := range []string{".rd-title{overflow-wrap:anywhere}", "td[data-k=formats]{width:1%;white-space:nowrap;text-align:right}"} {
 		if !strings.Contains(readerBooksCSS, want) {
 			t.Errorf("CSS lacks %s", want)
 		}
