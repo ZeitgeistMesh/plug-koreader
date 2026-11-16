@@ -18,3 +18,18 @@ func TestTheReaderFillsTheWindowAndTheFooterIsBelowIt(t *testing.T) {
 		t.Error("the text column is not 70ch (about 75 characters a line)")
 	}
 }
+
+// Owner, 16 Nov: "pdfs should do a better job of prioritising the content". On a wide window the
+// reader leaves the site's 56rem centre column, keeping a margin; a PDF page takes that width, and
+// an EPUB's text keeps its 70ch measure inside it.
+func TestTheReaderLeavesTheCentreColumnOnAWideWindow(t *testing.T) {
+	if !strings.Contains(readerReadCSS, "main:has(>.rd-shell){max-width:none}") || !strings.Contains(readerReadCSS, "main:has(>.rd-shell){padding-inline:var(--sp-6)}") {
+		t.Error("the reader is still held to the centre column")
+	}
+	if !strings.Contains(readerPDFCSS, ".rd-text.rd-pdf{max-width:none;") {
+		t.Error("the PDF page is capped short of the reader's width")
+	}
+	if strings.Contains(readerPDFCSS, "60rem") {
+		t.Error("the PDF keeps a fixed cap")
+	}
+}

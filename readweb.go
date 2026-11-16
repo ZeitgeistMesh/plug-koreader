@@ -29,6 +29,8 @@ import (
 // the page's height). The text column is 70ch of its own 18px type, about 75 characters a line on
 // a wide window: in ch so the measure follows the text size, not the root's.
 const readerReadCSS = `
+main:has(>.rd-shell){max-width:none}
+@media(min-width:64rem){main:has(>.rd-shell){padding-inline:var(--sp-6)}}
 .rd-shell{display:flex;flex-direction:column;height:calc(100dvh - var(--rd-chrome, 19rem));min-height:16rem}
 .rd-shell>.rd-text{flex:1 1 auto;min-height:0;overflow-y:auto;width:100%;box-sizing:border-box;padding-inline:var(--sp-3)}
 .rd-bar{display:flex;flex-wrap:wrap;gap:var(--sp-3);align-items:center;justify-content:space-between;margin-block:var(--sp-3)}

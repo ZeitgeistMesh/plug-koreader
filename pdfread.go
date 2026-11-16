@@ -54,7 +54,7 @@ func readableFile(e *CatalogEntry) bool {
 }
 
 const readerPDFCSS = `
-.rd-text.rd-pdf{max-width:60rem;line-height:normal;font-size:1rem}
+.rd-text.rd-pdf{max-width:none;line-height:normal;font-size:1rem}
 .rd-pdfpage{position:relative;margin-inline:auto;width:max-content;max-width:100%}
 .rd-pdfpage canvas{display:block;max-width:100%;background:#fff;box-shadow:0 0 0 1px var(--border)}
 .rd-pdfpage .rd-textlayer{position:absolute;inset:0;overflow:hidden;line-height:1;text-size-adjust:none}
