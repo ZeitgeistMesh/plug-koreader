@@ -208,7 +208,10 @@ const yearCSS = `<style>
 .ko-yearbar>[aria-label=Year]{order:3;flex:1 1 100%}
 /* View and Save are ONE capsule (owner, e81b1fce): joined, one seam, only the outer ends are round. */
 .ko-yearbar .btn-group{gap:0}
-.ko-yearbar .btn-group>.btn{border-radius:0}
+.ko-yearbar .btn-group>.btn{border-radius:0;position:relative}
+/* The seam is Save's left edge over View's right one. A hovered or focused half comes to the front, so its
+   hover border shows on all four sides (92382f61: View's seam stayed the old colour). */
+.ko-yearbar .btn-group>.btn:hover,.ko-yearbar .btn-group>.btn:focus-visible{z-index:1}
 .ko-yearbar .btn-group>.btn:first-child{border-radius:var(--r-cap) 0 0 var(--r-cap)}
 .ko-yearbar .btn-group>.btn:last-child{border-radius:0 var(--r-cap) var(--r-cap) 0;margin-left:-1px}
 .ko-ygrid{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--sp-4);margin-top:var(--sp-2)}

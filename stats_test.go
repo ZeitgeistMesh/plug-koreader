@@ -136,7 +136,9 @@ func TestYearAndStatsHaveAViewAndSaveCapsule(t *testing.T) {
 
 // The capsule is joined: no gap between View and Save, round only at the outer ends (owner: "make a capsule").
 func TestTheViewSaveCapsuleIsJoined(t *testing.T) {
-	for _, want := range []string{".ko-yearbar .btn-group{gap:0}", ".btn:first-child{border-radius:var(--r-cap) 0 0 var(--r-cap)}", ".btn:last-child{border-radius:0 var(--r-cap) var(--r-cap) 0;margin-left:-1px}"} {
+	for _, want := range []string{".ko-yearbar .btn-group{gap:0}", ".btn:first-child{border-radius:var(--r-cap) 0 0 var(--r-cap)}", ".btn:last-child{border-radius:0 var(--r-cap) var(--r-cap) 0;margin-left:-1px}",
+		// 92382f61: the hovered half is in front, so the seam takes its hover colour too.
+		".btn-group>.btn{border-radius:0;position:relative}", ".btn-group>.btn:hover,.ko-yearbar .btn-group>.btn:focus-visible{z-index:1}"} {
 		if !strings.Contains(yearCSS, want) {
 			t.Errorf("the year bar CSS lacks %q", want)
 		}
