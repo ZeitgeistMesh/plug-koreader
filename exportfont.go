@@ -1,8 +1,10 @@
 package main
 
-// exportfont.go — the typeface of the exported pictures (year, stats): Liberation Sans, embedded
-// (SIL Open Font License, fonts/LICENSE-Liberation), drawn with anti-aliasing by a small TrueType
-// reader and rasteriser written against the standard library only. It reads the tables a Latin,
+// exportfont.go — the typeface of the exported pictures (year, stats): Noto Sans Mono, embedded
+// (SIL Open Font License 1.1, fonts/LICENSE-NotoSansMono). The owner asked for "OpenSans Mono Book"
+// (dab02a73 18901aa3); no font has that name, and Noto Sans Mono is the monospaced face of the Noto
+// family that grew from Open Sans, in its regular ("book") weight. It is drawn with anti-aliasing
+// by a small TrueType reader and rasteriser written against the standard library only. It reads the tables a Latin,
 // Greek or Cyrillic line needs (head, maxp, hhea, hmtx, cmap format 4, loca, glyf with composites)
 // and fills each outline by exact area coverage, so a picture needs no font tool, no browser and no
 // module outside the standard library. There is no kerning or hinting: at the sizes a shared
@@ -16,10 +18,10 @@ import (
 	"sync"
 )
 
-//go:embed fonts/LiberationSans-Regular.ttf
+//go:embed fonts/NotoSansMono-Regular.ttf
 var fontRegularData []byte
 
-//go:embed fonts/LiberationSans-Bold.ttf
+//go:embed fonts/NotoSansMono-Bold.ttf
 var fontBoldData []byte
 
 // ttFont is one parsed font: the table offsets and a cache of the outlines read so far.

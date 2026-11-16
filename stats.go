@@ -306,12 +306,15 @@ func drawBars(c *canvas, y int, head string, labels []string, vals []int) int {
 // statsPNG draws the Stats page: the title, the numbers, the books read longest and the three bar groups.
 func statsPNG(idx *readingIndex, loc *time.Location, year int) ([]byte, error) {
 	d := buildYearDetail(idx, loc, year)
-	hu := 36 + 35 + 14 + 2*(62+12) + 26 + 22 + len(d.Top)*imgRow + 3*22 + (7+24+12)*12 + 60
+	// Each bar group is its head, a row per bar and the gap after it (drawBars); the last group's gap
+	// gives way to the foot, a margin under the last bar.
+	top := picTilesY + tileRows(8, 4)*(picTileH+picTileGap) + 26
+	hu := top + 22 + len(d.Top)*imgRow + 22 + 3*(22+22) + (7+24+12)*12 - 22 + imgMargin
 	c := newCanvas(imgW, hu)
 	c.rect(0, 0, imgW, hu, imgBG)
 	c.text(imgMargin, 36, 5, fmt.Sprintf(statsPNGTitle, year), imgText)
 	if d.Days == 0 {
-		c.text(imgMargin, 36+35+14, 2, fmt.Sprintf(statsEmpty, year), imgMuted)
+		c.text(imgMargin, picTilesY, 2, fmt.Sprintf(statsEmpty, year), imgMuted)
 	} else {
 		busy := time.Month(d.BusiestMonth).String()
 		tiles := [][2]string{
@@ -320,20 +323,8 @@ func statsPNG(idx *readingIndex, loc *time.Location, year int) ([]byte, error) {
 			{fmt.Sprint(d.Quotes), statsQuotes}, {fmt.Sprint(d.Streak), statsBestStreak},
 			{busy, statsBusiestMonth}, {fmt.Sprintf(statsAvgDayValue, d.Seconds/d.Days/60), statsAvgDay},
 		}
-		tw := (imgW - 2*imgMargin - 3*12) / 4
-		for i, t := range tiles {
-			x, y := imgMargin+(i%4)*(tw+12), 36+35+14+(i/4)*(62+12)
-			c.rect(x, y, tw, 62, imgCard)
-			c.stroke(x, y, tw, 62, imgBorder)
-			// A tile shows its words whole: the number steps down a size before it would be cut.
-			vs := 4
-			for vs > 2 && textW(t[0], vs) > tw-20 {
-				vs--
-			}
-			c.text(x+10, y+8, vs, t[0], imgText)
-			c.text(x+10, y+42, 2, t[1], imgMuted)
-		}
-		y := 36 + 35 + 14 + 2*(62+12) + 26
+		drawTiles(c, picTilesY, tiles, 4)
+		y := top
 		c.text(imgMargin, y, 2, statsMostReadHead, imgMuted)
 		for i, b := range d.Top {
 			ly := y + 22 + i*imgRow

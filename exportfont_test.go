@@ -6,7 +6,8 @@ import (
 )
 
 // The exports use one embedded typeface (owner, dab02a73 e81b1fce: "pick a different font for all
-// exports"). It must parse, measure proportionally, draw ink, and cover the accents a title carries.
+// exports"; 18901aa3: a mono face). It must parse, measure every letter the same width, draw ink,
+// and cover the accents a title carries.
 func TestExportFontParsesAndMeasures(t *testing.T) {
 	reg, bold := exportFace(false), exportFace(true)
 	if reg == nil || bold == nil {
@@ -15,8 +16,8 @@ func TestExportFontParsesAndMeasures(t *testing.T) {
 	if reg == bold {
 		t.Error("bold must be its own face")
 	}
-	if textW("iiii", 2) >= textW("WWWW", 2) {
-		t.Error("the type is proportional: four i's are narrower than four W's")
+	if textW("iiii", 2) != textW("WWWW", 2) {
+		t.Error("the type is monospaced: four i's are as wide as four W's")
 	}
 	if textW("Reading 2026", 5) <= textW("Reading 2026", 2) {
 		t.Error("a bigger step is wider")

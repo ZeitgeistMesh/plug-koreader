@@ -62,7 +62,7 @@ func TestStatsPNGIsAPictureForAFullAndAnEmptyYear(t *testing.T) {
 
 // A tile says its words in full, on the page and in the picture: the picture's widest label and number fit the tile.
 func TestStatsTilesFitTheirWords(t *testing.T) {
-	tw := (imgW - 2*imgMargin - 3*12) / 4
+	tw := tileWidth(4)
 	for _, l := range []string{statsDaysRead, statsHours, statsBooksRead, statsPages, statsQuotes, statsBestStreak, statsBusiestMonth, statsAvgDay} {
 		if textW(l, 2) > tw-20 {
 			t.Errorf("%q does not fit a tile at the label size", l)

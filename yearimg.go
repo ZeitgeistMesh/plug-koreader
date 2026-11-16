@@ -102,7 +102,7 @@ func (c *canvas) stroke(x, y, w, h int, col color.RGBA) {
 // (capitals seven tall), and the big steps are bold.
 const (
 	emPerScale = 10
-	capPerEm   = 0.7 // Liberation Sans' capitals are 0.69 of the em
+	capPerEm   = 0.714 // Noto Sans Mono's capitals are 0.714 of the em
 )
 
 func scaleBold(scale int) bool { return scale >= 4 }
@@ -148,10 +148,48 @@ func bookLine(n int, title, t string) string {
 	return prefix + fit(displayTitle(title), 2, imgW-2*imgMargin-textW(t, 2)-textW(prefix, 2)-16)
 }
 
+// The head of both pictures: the title, then the number tiles under it, picTileGap apart. The gap
+// is under the title's descenders, so a "g" in it never touches a tile.
+const (
+	picTilesY  = 36 + 35 + 24
+	picTileH   = 62
+	picTileGap = 12
+)
+
+// tileRows is how many rows n tiles take at perRow to a row.
+func tileRows(n, perRow int) int { return (n + perRow - 1) / perRow }
+
+// tileWidth is one tile's width at perRow to a row.
+func tileWidth(perRow int) int {
+	return (imgW - 2*imgMargin - (perRow-1)*picTileGap) / perRow
+}
+
+// drawTiles draws the number tiles, perRow to a row, from y; it returns the y under the last row.
+// A tile shows its words whole: the number steps down a size before it would be cut.
+func drawTiles(c *canvas, y int, tiles [][2]string, perRow int) int {
+	tw := tileWidth(perRow)
+	for i, t := range tiles {
+		x, ty := imgMargin+(i%perRow)*(tw+picTileGap), y+(i/perRow)*(picTileH+picTileGap)
+		c.rect(x, ty, tw, picTileH, imgCard)
+		c.stroke(x, ty, tw, picTileH, imgBorder)
+		vs := 4
+		for vs > 2 && textW(t[0], vs) > tw-20 {
+			vs--
+		}
+		c.text(x+10, ty+7, vs, t[0], imgText)
+		c.text(x+10, ty+40, 2, t[1], imgMuted)
+	}
+	return y + tileRows(len(tiles), perRow)*(picTileH+picTileGap) - picTileGap
+}
+
+// yearTilesPerRow: six tiles, two rows of three, so a label in the mono face fits its tile.
+const yearTilesPerRow = 3
+
 // yearPNG draws the year. now fixes "today" so a test is stable.
 func yearPNG(idx *readingIndex, loc *time.Location, year int, now time.Time) ([]byte, error) {
 	st := buildYearStats(idx, loc, year)
-	const head = 36 + 35 + 14 + 62 + 26
+	tiles := yearTiles(st)
+	head := picTilesY + tileRows(len(tiles), yearTilesPerRow)*(picTileH+picTileGap) - picTileGap + 26
 	const monthHead = 14 + 6 + 7 + 4 // the month's name, then the weekday names
 	const monthGap = 22
 	// A month is as tall as its weeks, so one of four weeks takes less room than one of six.
@@ -172,19 +210,7 @@ func yearPNG(idx *readingIndex, loc *time.Location, year int, now time.Time) ([]
 	c.text(imgMargin, 36, 5, fmt.Sprintf("Reading %d", year), imgText)
 
 	// The numbers.
-	tiles := [][2]string{
-		{fmt.Sprint(st.Days), "Days read"}, {fmt.Sprintf("%.0f", float64(st.Seconds)/3600), "Hours"},
-		{fmt.Sprint(st.Books), "Books"}, {fmt.Sprint(st.Pages), "Pages"},
-		{fmt.Sprint(st.Quotes), "Quotes"}, {fmt.Sprint(st.Streak), "Best streak"},
-	}
-	tw := (imgW - 2*imgMargin - 5*12) / 6
-	for i, t := range tiles {
-		x, y := imgMargin+i*(tw+12), 36+35+14
-		c.rect(x, y, tw, 62, imgCard)
-		c.stroke(x, y, tw, 62, imgBorder)
-		c.text(x+10, y+8, 4, t[0], imgText)
-		c.text(x+10, y+42, 2, t[1], imgMuted)
-	}
+	drawTiles(c, picTilesY, tiles, yearTilesPerRow)
 
 	// The twelve months, one to a row, each the month page's calendar at the full width.
 	y := head
@@ -222,6 +248,15 @@ func yearPNG(idx *readingIndex, loc *time.Location, year int, now time.Time) ([]
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// yearTiles are the year picture's numbers.
+func yearTiles(st yearStats) [][2]string {
+	return [][2]string{
+		{fmt.Sprint(st.Days), "Days read"}, {fmt.Sprintf("%.0f", float64(st.Seconds)/3600), "Hours"},
+		{fmt.Sprint(st.Books), "Books"}, {fmt.Sprint(st.Pages), "Pages"},
+		{fmt.Sprint(st.Quotes), "Quotes"}, {fmt.Sprint(st.Streak), "Best streak"},
+	}
 }
 
 // drawWeek draws seven day boxes and the bars and histograms over them, the way the page does.
