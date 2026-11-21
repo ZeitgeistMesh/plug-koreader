@@ -374,7 +374,7 @@ func koCalCSS() string {
 a.ko-dn{text-decoration:none}
 .ko-bar{display:block;pointer-events:none;min-width:0;margin:0 1px;padding:0 var(--sp-1);font-size:.72rem;line-height:1.5;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-hi);text-decoration:none;
-  border-radius:var(--r);border-left:3px solid var(--bar)}
+  border-radius:var(--r)}
 .ko-ticks{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));align-items:end;height:var(--ko-row);margin:0 1px 1px}
 .ko-ticks i{display:block;background:var(--muted);border-radius:1px}
 .ko-k0{height:1px;opacity:.3}.ko-k1{height:25%}.ko-k2{height:50%}.ko-k3{height:75%}.ko-k4{height:100%}
